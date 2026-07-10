@@ -6,7 +6,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // Cooldown tracker (maps userId -> timestamp when they can hunt again)
 const cooldowns = new Map();
-const COOLDOWN_TIME_MS = 4000000 * 60 * 1000; // 1 minute cooldown
+const COOLDOWN_TIME_MS = 4000000 * 600 * 1000; // 1 minute cooldown
 
 // List of possible animals, their emojis, and the price they sell for
 const PREY_LIST = [
