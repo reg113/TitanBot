@@ -3,17 +3,10 @@ import { successEmbed, createEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
+import { ANIMAL_LIST } from '../../utils/animals.js';
 
 const cooldowns = new Map();
-const COOLDOWN_TIME_MS = 15 * 1000; // 15 seconds (OwO bot style fast pacing)
-
-const PREY_LIST = [
-    { id: 'rabbit', name: 'Rabbit', emoji: '🐇', chance: 30 },
-    { id: 'duck', name: 'Duck', emoji: '🦆', chance: 25 },
-    { id: 'deer', name: 'Deer', emoji: '🦌', chance: 15 },
-    { id: 'unicorn', name: 'unicorn', emoji: '🦄', chance: 1 },
-    { id: 'bear', name: 'Bear', emoji: '🐻', chance: 3 } // Rare
-];
+const COOLDOWN_TIME_MS = 15 * 1000; 
 
 export default {
     category: 'Economy',
@@ -51,12 +44,11 @@ export default {
             });
         }
 
-        // Weighted random selection
         const roll = Math.random() * 100;
         let accumulatedChance = 0;
-        let caught = PREY_LIST[0];
+        let caught = ANIMAL_LIST[0];
 
-        for (const prey of PREY_LIST) {
+        for (const prey of ANIMAL_LIST) {
             accumulatedChance += prey.chance;
             if (roll <= accumulatedChance) {
                 caught = prey;
@@ -66,7 +58,6 @@ export default {
 
         const userData = await getEconomyData(client, guildId, userId);
         
-        // Ensure the zoo collection object exists in the DB profile
         if (!userData.zoo) userData.zoo = {};
         userData.zoo[caught.id] = (userData.zoo[caught.id] || 0) + 1;
 
