@@ -25,7 +25,7 @@ export default {
         if (cooldowns.has(userId)) {
             const expirationTime = cooldowns.get(userId) + COOLDOWN_TIME_MS;
             if (now < expirationTime) {
-                const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
+                const timeLeft = ((expirationTime - now) /60 * 1000).toFixed(1);
                 throw createError(
                     "On Cooldown",
                     ErrorTypes.RATE_LIMIT,
