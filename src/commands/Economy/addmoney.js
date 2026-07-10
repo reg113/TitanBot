@@ -95,3 +95,14 @@ export default {
         await InteractionHelper.safeEditReply(interaction, { embeds: [resultEmbed] });
     }, { command: 'give' })
 };
+
+data: new SlashCommandBuilder()
+        .setName('addmoney')
+        .setDescription('Generate money and add it to a user wallet')
+        // (Removed permission restrictions line for testing)
+        .addUserOption(option =>
+            option
+                .setName('user')
+                .setDescription('The user to receive the generated money')
+                .setRequired(true)
+        )
