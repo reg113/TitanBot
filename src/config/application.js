@@ -82,7 +82,7 @@ const appConfig = {
 
     tickets: true,                  
     giveaways: true,                
-    birthday: true,                 
+    birthday: false,                 
     counter: true,                  
 
     verification: true,             
