@@ -6,10 +6,10 @@ export const shopItems = [
         description: 'Consume this item to mention/ping a specific server role.',
         type: 'consumable',
         maxQuantity: 5,
-        cooldown: 60000, // 1 minute cooldown between uses
+        cooldown: 300000, // 5 minute cooldown between uses
         effect: {
             type: 'ping_role',
-            roleId: '123456789012345678' // Dummy Role ID
+            roleId: '1515655155050086400' // Role ID
         }
     },
     {
