@@ -41,9 +41,11 @@ export default {
                 totalCount += count;
                 uniqueDiscovered++;
                 
-                const isStarred = starredAnimals[animal.id] ? '⭐' : '';
-                // Added price range formatting ($min-$max)
-                const displayLine = `\`x${count}\` ${animal.emoji} **${animal.name}** \`($${animal.minPrice}-$${animal.maxPrice})\` ${isStarred}`.trim();
+                const lockedCount = starredAnimals[animal.id] || 0;
+                const lockDisplay = lockedCount > 0 ? ` 🔒\`${lockedCount}\`` : '';
+                
+                // Format example: x5 🦝 Raccoon ($40-$70) 🔒2
+                const displayLine = `\`x${count}\`${lockDisplay} ${animal.emoji} **${animal.name}** \`($${animal.minPrice}-$${animal.maxPrice})\``.trim();
                 
                 if (animal.maxPrice > 4000) {
                     tiers['LEGENDARY'].push(displayLine);
@@ -78,8 +80,6 @@ export default {
 
         let hasAnimals = false;
 
-        // Turned off inline formatting (inline: false) so the text has plenty of horizontal room
-        // to display the name, count, and price ranges neatly without cutting off on mobile.
         for (const [tierName, animals] of Object.entries(tiers)) {
             if (animals.length > 0) {
                 hasAnimals = true;
@@ -102,7 +102,7 @@ export default {
             );
         }
 
-        embed.setFooter({ text: `Use /star to protect items • Run /sellall to liquidate unstarred animals` });
+        embed.setFooter({ text: `Use /star [animal] [qty] to lock combat assets • Run /sellall to liquidate` });
 
         await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
     }, { command: 'zoo' })
