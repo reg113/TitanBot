@@ -8,7 +8,7 @@ export default {
     category: 'Economy',
     data: new SlashCommandBuilder()
         .setName('sellall')
-        .setDescription('Sell all your zoo animals at once for current market value'),
+        .setDescription('Sell all unprotected zoo animals at once for market value'),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
@@ -19,12 +19,20 @@ export default {
 
         const userData = await getEconomyData(client, guildId, userId);
         const userZoo = userData.zoo || {};
+        const starredAnimals = userData.zoo_starred || {};
 
         let totalEarnings = 0;
         let totalAnimalsSold = 0;
+        let skippedStarredCount = 0;
 
         for (const [id, quantity] of Object.entries(userZoo)) {
             if (quantity > 0) {
+                // Check if this animal is starred/locked
+                if (starredAnimals[id] === true) {
+                    skippedStarredCount += quantity;
+                    continue; 
+                }
+
                 const animalDef = ANIMALS[id];
                 if (!animalDef) continue;
                 
@@ -37,10 +45,13 @@ export default {
         }
 
         if (totalAnimalsSold === 0) {
+            const extraTip = skippedStarredCount > 0 
+                ? "\n*(Note: Your current animals are starred and protected from liquidation)*" 
+                : "";
             throw createError(
-                "Empty Zoo",
+                "No Liquidatable Animals",
                 ErrorTypes.VALIDATION,
-                "You don't have any animals in your zoo to sell."
+                `You don't have any tradeable animals in your zoo to sell.${extraTip}`
             );
         }
 
@@ -49,8 +60,12 @@ export default {
 
         await setEconomyData(client, guildId, userId, userData);
 
-        await InteractionHelper.safeEditReply(interaction, {
-            content: `💰 **Zoo Liquidated!** You sold **${totalAnimalsSold}** animals at fluctuating market rates and earned **$${totalEarnings.toLocaleString()}**.\nYour new cash balance is **$${userData.wallet.toLocaleString()}**.`
-        });
+        let summaryText = `💰 **Zoo Liquidated!** You sold **${totalAnimalsSold}** animals for **$${totalEarnings.toLocaleString()}**.`;
+        if (skippedStarredCount > 0) {
+            summaryText += `\n🛡️ Safely retained **${skippedStarredCount}** protected/starred animals.`;
+        }
+        summaryText += `\nYour new cash balance is **$${userData.wallet.toLocaleString()}**.`;
+
+        await InteractionHelper.safeEditReply(interaction, { content: summaryText });
     }, { command: 'sellall' })
 };
