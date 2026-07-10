@@ -11,10 +11,10 @@ const COOLDOWN_TIME_MS = 60 * 1000; // 1 minute cooldown
 // List of possible animals, their emojis, and the price they sell for
 const PREY_LIST = [
     { name: 'Rabbit', emoji: '🐇', minGold: 10, maxGold: 30, chance: 35 },
-    { name: 'Duck', emoji: '🦆', minGold: 15, maxGold: 35, chance: 25 },
-    { name: 'Deer', emoji: '🦌', minGold: 50, maxGold: 120, chance: 20 },
-    { name: 'Boar', emoji: '🐗', minGold: 80, maxGold: 180, chance: 15 },
-    { name: 'Bear', emoji: '🐻', minGold: 200, maxGold: 450, chance: 5 } // Rare catch
+    { name: 'Duck', emoji: '🦆', minGold: 15, maxGold: 45, chance: 25 },
+    { name: 'Deer', emoji: '🦌', minGold: 50, maxGold: 80, chance: 20 },
+    { name: 'Boar', emoji: '🐗', minGold: 70, maxGold: 100, chance: 15 },
+    { name: 'Bear', emoji: '🐻', minGold: 100, maxGold: 200, chance: 3 } // Rare catch
 ];
 
 export default {
