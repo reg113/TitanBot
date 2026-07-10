@@ -3,7 +3,7 @@ import { successEmbed, createEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-import { getItemById } from '../../shop/items.js'; // Ensure this relative path reaches your items.js file
+import { shopItems } from '../../shop/items.js'; // Adjust this relative path if your items.js folder setup is different
 
 export default {
     category: 'Economy',
@@ -12,61 +12,61 @@ export default {
         .setDescription('Consume an active item from your inventory.')
         .addStringOption(option =>
             option.setName('item')
-                .setDescription('The item name or shortcut you want to use (e.g., ps)')
+                .setDescription('The item name or shortcut you want to use (e.g., ps, pinger)')
                 .setRequired(true)
         ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
-        // Use your framework's safe wrapper to handle interaction deferrals
+        // Use your framework's native wrapper to defer safely
         const deferred = await InteractionHelper.safeDefer(interaction);
         if (!deferred) return;
 
         const userId = interaction.user.id;
         const guildId = interaction.guildId;
         
-        let inputItem = interaction.options.getString('item').toLowerCase().trim();
+        // Clean up the user input text
+        const inputItem = interaction.options.getString('item').toLowerCase().trim();
         
-        // 🔄 SHORTCUT TRANSLATOR: Automatically turns "/use ps" into your item ID "role_pinger"
-        if (inputItem === 'ps') {
-            inputItem = 'role_pinger';
-        }
+        // 🔍 FLEXIBLE LOOKUP: Finds the item by ID, shortcut 'ps', or any partial name match
+        const item = shopItems.find(i => {
+            const itemIdLower = i.id.toLowerCase();
+            const itemNameLower = i.name.toLowerCase();
+            
+            return itemIdLower === inputItem || 
+                   itemNameLower.includes(inputItem) || 
+                   (inputItem === 'ps' && i.id === 'role_pinger');
+        });
 
-        const item = getItemById(inputItem);
-
-        // If item doesn't exist in items.js config file
+        // 1. Check if the item actually exists in config
         if (!item) {
             return await InteractionHelper.safeEditReply(interaction, {
                 embeds: [createEmbed({ 
                     title: "❌ Item Not Found", 
-                    description: `Could not find an item config matching **${inputItem}** inside items.js.`, 
-                    color: "warning" 
+                    description: `Could not find an item matching **"${interaction.options.getString('item')}"** in the shop registry.`, 
+                    color: "danger" 
                 })]
             });
         }
 
-        // Fetch profile data using your framework's native handler 
+        // 2. Fetch the user's data record using your framework method
         const userData = await getEconomyData(client, guildId, userId);
-        
-        // Safety step to instantiate an empty collection if they haven't bought anything before
-        if (!userData.inventory) {
-            userData.inventory = {};
-        }
+        if (!userData.inventory) userData.inventory = {};
 
         const currentQuantity = userData.inventory[item.id] || 0;
 
-        // Check user ownership stock records
+        // 3. Verify they actually own the item
         if (currentQuantity <= 0) {
             return await InteractionHelper.safeEditReply(interaction, {
                 embeds: [createEmbed({ 
-                    title: "❌ Missing Item", 
-                    description: `You do not own any **${item.name}**! Buy it from the shop first.`, 
+                    title: "❌ Item Not Owned", 
+                    description: `You don't have any **${item.name}** in your inventory! Buy one from the shop first.`, 
                     color: "warning" 
                 })]
             });
         }
 
         // ========================================================
-        // EFFECT HANDLER: Role Pinger Logic
+        // EFFECT TRACKER: Role Pinger Logic
         // ========================================================
         if (item.effect?.type === 'ping_role') {
             const roleId = item.effect.roleId;
@@ -75,47 +75,49 @@ export default {
             if (!role) {
                 return await InteractionHelper.safeEditReply(interaction, {
                     embeds: [createEmbed({ 
-                        title: "❌ Configuration Error", 
-                        description: "The targeted mention role assigned to this item could not be found in this server.", 
-                        color: "warning" 
+                        title: "❌ Role Error", 
+                        description: `The role setup for this item (${roleId}) could not be found in this server.`, 
+                        color: "danger" 
                     })]
                 });
             }
 
-            // Temporarily bypass permission locks if the role isn't universally taggable
+            // Temporarily lift mention restrictions if the role is locked down
             const originalMentionable = role.mentionable;
             if (!originalMentionable) {
-                await role.setMentionable(true, 'Temporary mention override via item consumption').catch(() => null);
+                await role.setMentionable(true, 'Temporary mention bypass via /use item command').catch(() => null);
             }
 
-            // Fire public mention message directly into the chat channel
+            // Broadcast the ping directly into the text channel publicly
             await interaction.channel.send({
                 content: `📢 **${interaction.user.username}** used a **${item.name}**!\nAttention: ${role}`
-            });
+            }).catch(() => null);
 
-            // Restore secure server role settings defaults instantly 
+            // Revert permissions back to normal safely
             if (!originalMentionable) {
-                await role.setMentionable(false, 'Restoring standard role isolation rule policies').catch(() => null);
+                await role.setMentionable(false, 'Restoring original server role mention locks').catch(() => null);
             }
 
-            // Deduct 1 item copy out of their economy data profile structures
+            // Deduct 1 item out of their save data structure
             userData.inventory[item.id] -= 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            // Send custom frame success confirmation dispatch back to invoking user
+            // Success feedback message
             return await InteractionHelper.safeEditReply(interaction, {
                 embeds: [successEmbed(
-                    "✨ Item Used Successfully",
-                    `You consumed 1x **${item.name}**.`
+                    "✨ Item Used",
+                    `You successfully consumed 1x **${item.name}**.`
                 )]
             });
         }
 
-        // Fallback catch notice for passive tools/upgrades that don't need manual activation
+        // ========================================================
+        // FALLBACK: For items that shouldn't be used manually
+        // ========================================================
         return await InteractionHelper.safeEditReply(interaction, {
             embeds: [createEmbed({ 
                 title: "ℹ️ Passive Item", 
-                description: `**${item.name}** is a passive tool/upgrade. It functions automatically background contexts and doesn't need to be run via \`/use\`.`, 
+                description: `**${item.name}** is an item type (**${item.type}**) that works automatically in the background. You don't need to manually activate it!`, 
                 color: "warning" 
             })]
         });
