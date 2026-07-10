@@ -20,7 +20,7 @@ const PREY_LIST = [
 export default {
     category: 'Economy',
     data: new SlashCommandBuilder()
-        .setName('hunt')
+        .setName('oldhunt')
         .setDescription('Go hunting in the wilderness to earn some money!'),
 
     execute: withErrorHandling(async (interaction, config, client) => {
