@@ -108,7 +108,7 @@ export async function createInitialHelpMenu(client) {
     });
 
     embed.setFooter({ 
-        text: "Made with ❤️" 
+        text: "Made with :skull:" 
     });
     embed.setTimestamp();
 
