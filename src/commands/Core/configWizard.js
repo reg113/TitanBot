@@ -607,7 +607,7 @@ export default {
     data: new SlashCommandBuilder()
         .setName('configwizard')
         .setDescription('Open the server configuration dashboard and setup wizard')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .setDMPermission(false),
     category: 'Core',
 
@@ -618,7 +618,7 @@ export default {
                 return;
             }
 
-            if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+            if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
                 return replyUserError(interaction, {
                     type: ErrorTypes.PERMISSION,
                     message: 'You need the **Manage Server** permission to use this command.',
