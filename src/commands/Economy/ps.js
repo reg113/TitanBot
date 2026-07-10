@@ -1,92 +1,86 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { getItemById } from '../../shop/items.js'; // Double-check this relative path matches your directory structure
+import { getItemById } from '../../shop/items.js'; // Double check this path matches your items.js location
 
 export default {
     data: new SlashCommandBuilder()
-        .setName('ps')
-        .setDescription('Consume a Role Pinger item to mention the designated server role.'),
+        .setName('use')
+        .setDescription('Consume an active item from your inventory')
+        .addStringOption(option =>
+            option.setName('item')
+                .setDescription('The ID or shortcut of the item (e.g., ps, role_pinger)')
+                .setRequired(true)
+        ),
 
     async execute(interaction) {
-        const itemId = 'role_pinger';
+        let itemId = interaction.options.getString('item').toLowerCase().trim();
+        
+        // 🔄 SHORTCUT TRANSLATOR: Maps "/use ps" to your actual "role_pinger" configuration
+        if (itemId === 'ps') {
+            itemId = 'role_pinger';
+        }
+
         const item = getItemById(itemId);
 
         if (!item) {
-            return interaction.reply({ 
-                content: '❌ The role pinger item configuration was not found in items.js.', 
-                ephemeral: true 
-            });
+            return interaction.reply({ content: '❌ That item does not exist.', ephemeral: true });
         }
 
-        // Access the database wrapper attached to the client
-        const db = interaction.client.db;
-        if (!db) {
-            console.error("❌ TitanBot database wrapper object not found on interaction.client.db");
-            return interaction.reply({ 
-                content: "❌ Database connection error. Check your bot logs.", 
-                ephemeral: true 
-            });
-        }
+        // Set the response to ephemeral right away so the command footprint is hidden from public view
+        await interaction.deferReply({ ephemeral: true });
 
         try {
-            // Defer the reply to give the bot time to run database checks and update roles
-            await interaction.deferReply({ ephemeral: true });
+            const db = interaction.client.db;
+            if (!db) {
+                return interaction.editReply({ content: '❌ Database instance context not found.' });
+            }
 
-            // 1. Fetch user profile data
-            // ⚠️ NOTE: Replace 'getUser' with whatever method your specific TitanBot fork uses to pull user profiles (e.g., db.users.find)
+            // Get user data from TitanBot's native database context
             const userData = await db.getUser(interaction.user.id);
             const inventory = userData?.inventory || {};
 
-            // 2. Verify item ownership
+            // Verify ownership
             if (!inventory[itemId] || inventory[itemId] <= 0) {
-                return interaction.editReply({ 
-                    content: `❌ You do not own any **${item.name}**!` 
+                return interaction.editReply({ content: `❌ You do not own any **${item.name}**! Buy it from the shop first.` });
+            }
+
+            // Handle the role ping logic
+            if (item.effect && item.effect.type === 'ping_role') {
+                const roleId = item.effect.roleId;
+                const role = interaction.guild.roles.cache.get(roleId);
+
+                if (!role) {
+                    return interaction.editReply({ content: '❌ Error: The target role could not be found.' });
+                }
+
+                // Handle temporary mention permissions if the role is locked down
+                const originalMentionable = role.mentionable;
+                if (!originalMentionable) {
+                    await role.setMentionable(true, 'Temporary mention via shop item');
+                }
+
+                // Broadcast the ping publicly into the channel (Includes both display name and global mention)
+                await interaction.channel.send({
+                    content: `📢 **${interaction.user.username}** (${interaction.user}) consumed a **${item.name}**!\nAttention: ${role}`
                 });
+
+                // Revert temporary mention permissions back to secure settings
+                if (!originalMentionable) {
+                    await role.setMentionable(false, 'Reverting temporary mention');
+                }
+
+                // Deduct 1 item from inventory via TitanBot's native method
+                await db.updateInventory(interaction.user.id, itemId, -1);
+
+                return interaction.editReply({ content: `✅ Successfully used 1x **${item.name}**!` });
             }
 
-            // 3. Find the target role configuration
-            const roleId = item.effect.roleId;
-            const role = interaction.guild.roles.cache.get(roleId);
-
-            if (!role) {
-                return interaction.editReply({ 
-                    content: '❌ Configuration Error: The target role could not be found in this server.' 
-                });
-            }
-
-            // 4. Handle mention adjustments if the role isn't universally taggable
-            const originalMentionable = role.mentionable;
-            if (!originalMentionable) {
-                await role.setMentionable(true, 'Temporary mention via shop item use');
-            }
-
-            // 5. Broadcast the ping publicly into the channel
-            await interaction.channel.send({
-                content: `📢 **${interaction.user.username}** (${interaction.user}) consumed a **${item.name}**!\nAttention: ${role}`
-            });
-
-            // 6. Reset the role privacy state back to its original setting
-            if (!originalMentionable) {
-                await role.setMentionable(false, 'Reverting temporary mention');
-            }
-
-            // 7. Deduct 1 copy from their database inventory tracker
-            // ⚠️ NOTE: Replace 'updateInventory' with your branch's exact inventory modification function
-            await db.updateInventory(interaction.user.id, itemId, -1);
-
-            // Confirm success cleanly to the user who ran it
             return interaction.editReply({ 
-                content: `✅ Successfully consumed 1 **${item.name}**.` 
+                content: `ℹ️ **${item.name}** is a passive tool or upgrade. You don't need to manually use it!` 
             });
 
         } catch (error) {
-            console.error("An error occurred during item execution:", error);
-            
-            // Helpful debug assistant if your terminal runs into method errors
-            console.log("Your bot instance's available database functions are:", Object.keys(db));
-            
-            return interaction.editReply({ 
-                content: `❌ Failed to process inventory action. Check your hosting terminal console for database method names.` 
-            });
+            console.error("Error inside your use command handler:", error);
+            return interaction.editReply({ content: '❌ An error occurred while attempting to process this item.' });
         }
     }
 };
