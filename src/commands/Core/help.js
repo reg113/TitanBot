@@ -85,8 +85,8 @@ export async function createInitialHelpMenu(client) {
             {
                 name: '🚀 Getting Started',
                 value: [
-                    '**3. Browse commands** — Use the menu below to view categories and commands.',
-                    '*ahlul skull',
+                    '**1. Browse commands** — Use the menu below to view categories and commands.',
+                    '*ahlul skull*',
                 ].join('\n'),
                 inline: false,
             },
