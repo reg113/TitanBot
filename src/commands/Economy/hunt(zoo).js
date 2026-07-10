@@ -3,14 +3,7 @@ import { createEmbed } from '../../utils/embeds.js';
 import { getEconomyData } from '../../utils/economy.js';
 import { withErrorHandling } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-
-const ANIMAL_DISPLAY = {
-    rabbit: { name: 'Rabbit', emoji: '🐇' },
-    duck: { name: 'Duck', emoji: '🦆' },
-    deer: { name: 'Deer', emoji: '🦌' },
-    bear: { name: 'Bear', emoji: '🐻' },
-    unicorn: { name: 'Unicorn', emoji: '🦄' }
-};
+import { ANIMAL_LIST } from '../../utils/animals.js';
 
 export default {
     category: 'Economy',
@@ -31,9 +24,11 @@ export default {
 
         let zooDescription = "";
         
-        for (const [id, info] of Object.entries(ANIMAL_DISPLAY)) {
-            const count = userZoo[id] || 0;
-            zooDescription += `${info.emoji} **${info.name}**: \`x${count}\`\n`;
+        for (const animal of ANIMAL_LIST) {
+            const count = userZoo[animal.id] || 0;
+            if (count > 0) {
+                zooDescription += `${animal.emoji} **${animal.name}**: \`x${count}\`\n`;
+            }
         }
 
         const embed = createEmbed({
