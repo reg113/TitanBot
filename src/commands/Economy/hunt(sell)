@@ -9,8 +9,8 @@ const ANIMAL_PRICE_RANGES = {
     rabbit: { min: 10, max: 20 },
     duck: { min: 15, max: 35 },
     deer: { min: 40, max: 80 },
-    boar: { min: 80, max: 140 },
-    bear: { min: 250, max: 450 }
+    unicorn: { min: 150, max: 200 },
+    bear: { min: 100, max: 150 }
 };
 
 export default {
