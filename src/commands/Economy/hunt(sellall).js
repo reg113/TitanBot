@@ -49,7 +49,6 @@ export default {
 
         await setEconomyData(client, guildId, userId, userData);
 
-        // Uses a regular text message response instead of an embed
         await InteractionHelper.safeEditReply(interaction, {
             content: `💰 **Zoo Liquidated!** You sold **${totalAnimalsSold}** animals at fluctuating market rates and earned **$${totalEarnings.toLocaleString()}**.\nYour new cash balance is **$${userData.wallet.toLocaleString()}**.`
         });
