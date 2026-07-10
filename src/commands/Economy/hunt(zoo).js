@@ -23,10 +23,11 @@ export default {
         const userZoo = userData.zoo || {};
 
         const tiers = {
-            '🔮 ✧ M Y T H I C A L ✧ 🔮': [],
-            '👑 ✧ A P E X  P R E D A T O R S ✧ 👑': [],
-            '🌲 ✧ W I L D L I F E ✧ 🌲': [],
-            '🏡 ✧ C R I T T E R S ✧ 🏡': []
+            'LEGENDARY': [],
+            'EPIC': [],
+            'RARE': [],
+            'UNCOMMON': [],
+            'COMMON': []
         };
 
         let totalAnimals = 0;
@@ -35,26 +36,28 @@ export default {
             const count = userZoo[animal.id] || 0;
             if (count > 0) {
                 totalAnimals += count;
-                const displayLine = `> ${animal.emoji} \`x${count.toString().padEnd(3)}\` **${animal.name}**`;
+                const displayLine = `${animal.emoji} \`x${count.toString().padEnd(2)}\` **${animal.name}**`;
                 
                 if (animal.maxPrice > 4000) {
-                    tiers['🔮 ✧ M Y T H I C A L ✧ 🔮'].push(displayLine);
+                    tiers['LEGENDARY'].push(displayLine);
                 } else if (animal.maxPrice > 400) {
-                    tiers['👑 ✧ A P E X  P R E D A T O R S ✧ 👑'].push(displayLine);
+                    tiers['EPIC'].push(displayLine);
                 } else if (animal.maxPrice > 100) {
-                    tiers['🌲 ✧ W I L D L I F E ✧ 🌲'].push(displayLine);
+                    tiers['RARE'].push(displayLine);
+                } else if (animal.maxPrice > 35) {
+                    tiers['UNCOMMON'].push(displayLine);
                 } else {
-                    tiers['🏡 ✧ C R I T T E R S ✧ 🏡'].push(displayLine);
+                    tiers['COMMON'].push(displayLine);
                 }
             }
         }
 
         const embed = createEmbed({
-            title: `🐾 ${targetUser.username}'s Nature Sanctuary`,
+            title: `🐾 ${targetUser.username}'s Zoo Collection`,
             color: "#2ECC71" 
         })
         .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
-        .setDescription(`*Managing a thriving ecosystem of **${totalAnimals}** total animals.*\n\n╔════════════════════════╗\n   🌿   **S A N C T U A R Y   E X H I B I T S**   🌿\n╚════════════════════════╝`);
+        .setDescription(`Total Animals: **${totalAnimals}**`);
 
         let hasAnimals = false;
 
@@ -62,7 +65,7 @@ export default {
             if (animals.length > 0) {
                 hasAnimals = true;
                 embed.addFields({
-                    name: `\n${tierName}`,
+                    name: tierName,
                     value: animals.join('\n'),
                     inline: false
                 });
@@ -70,7 +73,7 @@ export default {
         }
 
         if (!hasAnimals) {
-            embed.setDescription(`*This sanctuary is currently empty.*\n\nUse \`/hunt\` to venture into the wild and capture your first exhibits!`);
+            embed.setDescription(`This zoo is empty.\n\nUse \`/hunt\` to catch your first animals.`);
         }
 
         embed.setFooter({ text: `TitanBot Reserve • Challenge them with /battle` });
