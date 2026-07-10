@@ -6,8 +6,8 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 const CRIME_COOLDOWN = 60 * 60 * 1000;
 const MIN_CRIME_AMOUNT = 100;
-const MAX_CRIME_AMOUNT = 2000;
-const FAILURE_RATE = 0.4;
+const MAX_CRIME_AMOUNT = 1000;
+const FAILURE_RATE = 0.5;
 const JAIL_TIME = 2 * 60 * 60 * 1000;
 
 const CRIME_TYPES = [
