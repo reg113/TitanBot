@@ -3,15 +3,7 @@ import { successEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-
-// Matches the exact same min and max price ranges as sellall.js
-const ANIMAL_PRICE_RANGES = {
-    rabbit: { min: 10, max: 20 },
-    duck: { min: 15, max: 35 },
-    deer: { min: 40, max: 80 },
-    unicorn: { min: 150, max: 200 },
-    bear: { min: 100, max: 150 }
-};
+import { ANIMALS, ANIMAL_LIST } from '../../utils/animals.js';
 
 export default {
     category: 'Economy',
@@ -20,15 +12,9 @@ export default {
         .setDescription('Sell a specific animal from your zoo')
         .addStringOption(option =>
             option.setName('animal')
-                .setDescription('The type of animal to sell')
+                .setDescription('Type the name of the animal to sell')
                 .setRequired(true)
-                .addChoices(
-                    { name: 'Rabbit ($10 - $20)', value: 'rabbit' },
-                    { name: 'Duck ($15 - $35)', value: 'duck' },
-                    { name: 'Deer ($40 - $80)', value: 'deer' },
-                    { name: 'Boar ($80 - $140)', value: 'boar' },
-                    { name: 'Bear ($250 - $450)', value: 'bear' }
-                )
+                .setAutocomplete(true) 
         )
         .addIntegerOption(option =>
             option.setName('amount')
@@ -36,6 +22,21 @@ export default {
                 .setRequired(true)
                 .setMinValue(1)
         ),
+
+    async autocomplete(interaction) {
+        const focusedValue = interaction.options.getFocused().toLowerCase();
+        
+        const filtered = ANIMAL_LIST.filter(animal => 
+            animal.name.toLowerCase().includes(focusedValue)
+        );
+
+        await interaction.respond(
+            filtered.slice(0, 25).map(choice => ({ 
+                name: `${choice.emoji} ${choice.name} ($${choice.minPrice} - $${choice.maxPrice})`, 
+                value: choice.id 
+            }))
+        );
+    },
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
@@ -47,6 +48,15 @@ export default {
         const animalChoice = interaction.options.getString('animal');
         const quantityToSell = interaction.options.getInteger('amount');
 
+        const animalDef = ANIMALS[animalChoice];
+        if (!animalDef) {
+            throw createError(
+                "Invalid Animal",
+                ErrorTypes.VALIDATION,
+                `The animal "${animalChoice}" does not exist in the market.`
+            );
+        }
+
         const userData = await getEconomyData(client, guildId, userId);
         const userZoo = userData.zoo || {};
         const ownedQuantity = userZoo[animalChoice] || 0;
@@ -55,14 +65,11 @@ export default {
             throw createError(
                 "Insufficient Stock",
                 ErrorTypes.VALIDATION,
-                `You tried to sell ${quantityToSell} ${animalChoice}s, but you only have **x${ownedQuantity}** in your zoo.`
+                `You tried to sell ${quantityToSell} ${animalDef.name}s, but you only have **x${ownedQuantity}** in your zoo.`
             );
         }
 
-        const range = ANIMAL_PRICE_RANGES[animalChoice];
-        
-        // Roll a random price per unit within the min/max range
-        const rolledPrice = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+        const rolledPrice = Math.floor(Math.random() * (animalDef.maxPrice - animalDef.minPrice + 1)) + animalDef.minPrice;
         const grossEarnings = rolledPrice * quantityToSell;
 
         userZoo[animalChoice] = ownedQuantity - quantityToSell;
@@ -74,7 +81,7 @@ export default {
         await InteractionHelper.safeEditReply(interaction, {
             embeds: [successEmbed(
                 "💸 Market Sale",
-                `Successfully sold **x${quantityToSell} ${animalChoice}** at **$${rolledPrice}** each for a total of **$${grossEarnings.toLocaleString()}**.`
+                `Successfully sold **x${quantityToSell} ${animalDef.name}** at **$${rolledPrice}** each for a total of **$${grossEarnings.toLocaleString()}**.`
             ).addFields({
                 name: "Your New Wallet Balance",
                 value: `$${userData.wallet.toLocaleString()}`
