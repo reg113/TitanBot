@@ -1,17 +1,8 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { successEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-
-// Min and Max price ranges for each animal
-const ANIMAL_PRICE_RANGES = {
-    rabbit: { min: 10, max: 20 },
-    duck: { min: 15, max: 35 },
-    deer: { min: 40, max: 80 },
-    unicorn: { min: 150, max: 200 },
-    bear: { min: 100, max: 150 }
-};
+import { ANIMALS } from '../../utils/animals.js';
 
 export default {
     category: 'Economy',
@@ -34,11 +25,10 @@ export default {
 
         for (const [id, quantity] of Object.entries(userZoo)) {
             if (quantity > 0) {
-                const range = ANIMAL_PRICE_RANGES[id];
-                if (!range) continue;
-
-                // Roll a random price per unit within the min/max range
-                const rolledPrice = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+                const animalDef = ANIMALS[id];
+                if (!animalDef) continue;
+                
+                const rolledPrice = Math.floor(Math.random() * (animalDef.maxPrice - animalDef.minPrice + 1)) + animalDef.minPrice;
                 
                 totalEarnings += rolledPrice * quantity;
                 totalAnimalsSold += quantity;
@@ -59,14 +49,9 @@ export default {
 
         await setEconomyData(client, guildId, userId, userData);
 
+        // Uses a regular text message response instead of an embed
         await InteractionHelper.safeEditReply(interaction, {
-            embeds: [successEmbed(
-                "💰 Zoo Liquidated",
-                `Successfully sold **${totalAnimalsSold}** animals at fluctuating market rates, earning a total of **$${totalEarnings.toLocaleString()}**.`
-            ).addFields({
-                name: "Your New Wallet Balance",
-                value: `$${userData.wallet.toLocaleString()}`
-            })]
+            content: `💰 **Zoo Liquidated!** You sold **${totalAnimalsSold}** animals at fluctuating market rates and earned **$${totalEarnings.toLocaleString()}**.\nYour new cash balance is **$${userData.wallet.toLocaleString()}**.`
         });
     }, { command: 'sellall' })
 };
