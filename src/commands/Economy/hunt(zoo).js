@@ -41,8 +41,9 @@ export default {
                 totalCount += count;
                 uniqueDiscovered++;
                 
-                const isStarred = starredAnimals[animal.id] ? '⭐ ' : '';
-                const displayLine = `\`x${count}\` ${animal.emoji} ${animal.name} ${isStarred}`;
+                const isStarred = starredAnimals[animal.id] ? '⭐' : '';
+                // Added price range formatting ($min-$max)
+                const displayLine = `\`x${count}\` ${animal.emoji} **${animal.name}** \`($${animal.minPrice}-$${animal.maxPrice})\` ${isStarred}`.trim();
                 
                 if (animal.maxPrice > 4000) {
                     tiers['LEGENDARY'].push(displayLine);
@@ -77,13 +78,15 @@ export default {
 
         let hasAnimals = false;
 
+        // Turned off inline formatting (inline: false) so the text has plenty of horizontal room
+        // to display the name, count, and price ranges neatly without cutting off on mobile.
         for (const [tierName, animals] of Object.entries(tiers)) {
             if (animals.length > 0) {
                 hasAnimals = true;
                 embed.addFields({
-                    name: `✨ ${tierName}`,
+                    name: `✨ ${tierName} TIERS`,
                     value: animals.join('\n'),
-                    inline: true
+                    inline: false
                 });
             }
         }
