@@ -6,7 +6,7 @@ import { logger } from '../../../utils/logger.js';
 
 export default {
     async execute(interaction, config, client) {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return await replyUserError(interaction, { type: ErrorTypes.PERMISSION, message: 'You need **Manage Server** permissions to set the premium role.' });
         }
 
