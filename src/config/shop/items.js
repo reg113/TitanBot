@@ -99,19 +99,6 @@ roleId: null,
         }
     },
     {
-        id: 'lucky_charm',
-        name: '🍀 Lucky Charm',
-        price: 10000,
-        description: 'Increases luck for gambling. Has 3 uses before being consumed.',
-        type: 'consumable',
-        maxQuantity: 10,
-        effect: {
-            type: 'gamble_boost',
-            multiplier: 1.3,
-            uses: 3
-        }
-    },
-    {
         id: 'bank_note',
         name: '📜 Bank Note',
         price: 25000,
