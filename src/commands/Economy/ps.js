@@ -1,86 +1,124 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { getItemById } from '../../shop/items.js'; // Double check this path matches your items.js location
+import { successEmbed, createEmbed } from '../../utils/embeds.js';
+import { getEconomyData, setEconomyData } from '../../utils/economy.js';
+import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
+import { getItemById } from '../../shop/items.js'; // Ensure this relative path reaches your items.js file
 
 export default {
+    category: 'Economy',
     data: new SlashCommandBuilder()
         .setName('use')
-        .setDescription('Consume an active item from your inventory')
+        .setDescription('Consume an active item from your inventory.')
         .addStringOption(option =>
             option.setName('item')
-                .setDescription('The ID or shortcut of the item (e.g., ps, role_pinger)')
+                .setDescription('The item name or shortcut you want to use (e.g., ps)')
                 .setRequired(true)
         ),
 
-    async execute(interaction) {
-        let itemId = interaction.options.getString('item').toLowerCase().trim();
+    execute: withErrorHandling(async (interaction, config, client) => {
+        // Use your framework's safe wrapper to handle interaction deferrals
+        const deferred = await InteractionHelper.safeDefer(interaction);
+        if (!deferred) return;
+
+        const userId = interaction.user.id;
+        const guildId = interaction.guildId;
         
-        // 🔄 SHORTCUT TRANSLATOR: Maps "/use ps" to your actual "role_pinger" configuration
-        if (itemId === 'ps') {
-            itemId = 'role_pinger';
+        let inputItem = interaction.options.getString('item').toLowerCase().trim();
+        
+        // 🔄 SHORTCUT TRANSLATOR: Automatically turns "/use ps" into your item ID "role_pinger"
+        if (inputItem === 'ps') {
+            inputItem = 'role_pinger';
         }
 
-        const item = getItemById(itemId);
+        const item = getItemById(inputItem);
 
+        // If item doesn't exist in items.js config file
         if (!item) {
-            return interaction.reply({ content: '❌ That item does not exist.', ephemeral: true });
+            return await InteractionHelper.safeEditReply(interaction, {
+                embeds: [createEmbed({ 
+                    title: "❌ Item Not Found", 
+                    description: `Could not find an item config matching **${inputItem}** inside items.js.`, 
+                    color: "warning" 
+                })]
+            });
         }
 
-        // Set the response to ephemeral right away so the command footprint is hidden from public view
-        await interaction.deferReply({ ephemeral: true });
+        // Fetch profile data using your framework's native handler 
+        const userData = await getEconomyData(client, guildId, userId);
+        
+        // Safety step to instantiate an empty collection if they haven't bought anything before
+        if (!userData.inventory) {
+            userData.inventory = {};
+        }
 
-        try {
-            const db = interaction.client.db;
-            if (!db) {
-                return interaction.editReply({ content: '❌ Database instance context not found.' });
-            }
+        const currentQuantity = userData.inventory[item.id] || 0;
 
-            // Get user data from TitanBot's native database context
-            const userData = await db.getUser(interaction.user.id);
-            const inventory = userData?.inventory || {};
+        // Check user ownership stock records
+        if (currentQuantity <= 0) {
+            return await InteractionHelper.safeEditReply(interaction, {
+                embeds: [createEmbed({ 
+                    title: "❌ Missing Item", 
+                    description: `You do not own any **${item.name}**! Buy it from the shop first.`, 
+                    color: "warning" 
+                })]
+            });
+        }
 
-            // Verify ownership
-            if (!inventory[itemId] || inventory[itemId] <= 0) {
-                return interaction.editReply({ content: `❌ You do not own any **${item.name}**! Buy it from the shop first.` });
-            }
+        // ========================================================
+        // EFFECT HANDLER: Role Pinger Logic
+        // ========================================================
+        if (item.effect?.type === 'ping_role') {
+            const roleId = item.effect.roleId;
+            const role = interaction.guild.roles.cache.get(roleId);
 
-            // Handle the role ping logic
-            if (item.effect && item.effect.type === 'ping_role') {
-                const roleId = item.effect.roleId;
-                const role = interaction.guild.roles.cache.get(roleId);
-
-                if (!role) {
-                    return interaction.editReply({ content: '❌ Error: The target role could not be found.' });
-                }
-
-                // Handle temporary mention permissions if the role is locked down
-                const originalMentionable = role.mentionable;
-                if (!originalMentionable) {
-                    await role.setMentionable(true, 'Temporary mention via shop item');
-                }
-
-                // Broadcast the ping publicly into the channel (Includes both display name and global mention)
-                await interaction.channel.send({
-                    content: `📢 **${interaction.user.username}** (${interaction.user}) consumed a **${item.name}**!\nAttention: ${role}`
+            if (!role) {
+                return await InteractionHelper.safeEditReply(interaction, {
+                    embeds: [createEmbed({ 
+                        title: "❌ Configuration Error", 
+                        description: "The targeted mention role assigned to this item could not be found in this server.", 
+                        color: "warning" 
+                    })]
                 });
-
-                // Revert temporary mention permissions back to secure settings
-                if (!originalMentionable) {
-                    await role.setMentionable(false, 'Reverting temporary mention');
-                }
-
-                // Deduct 1 item from inventory via TitanBot's native method
-                await db.updateInventory(interaction.user.id, itemId, -1);
-
-                return interaction.editReply({ content: `✅ Successfully used 1x **${item.name}**!` });
             }
 
-            return interaction.editReply({ 
-                content: `ℹ️ **${item.name}** is a passive tool or upgrade. You don't need to manually use it!` 
+            // Temporarily bypass permission locks if the role isn't universally taggable
+            const originalMentionable = role.mentionable;
+            if (!originalMentionable) {
+                await role.setMentionable(true, 'Temporary mention override via item consumption').catch(() => null);
+            }
+
+            // Fire public mention message directly into the chat channel
+            await interaction.channel.send({
+                content: `📢 **${interaction.user.username}** used a **${item.name}**!\nAttention: ${role}`
             });
 
-        } catch (error) {
-            console.error("Error inside your use command handler:", error);
-            return interaction.editReply({ content: '❌ An error occurred while attempting to process this item.' });
+            // Restore secure server role settings defaults instantly 
+            if (!originalMentionable) {
+                await role.setMentionable(false, 'Restoring standard role isolation rule policies').catch(() => null);
+            }
+
+            // Deduct 1 item copy out of their economy data profile structures
+            userData.inventory[item.id] -= 1;
+            await setEconomyData(client, guildId, userId, userData);
+
+            // Send custom frame success confirmation dispatch back to invoking user
+            return await InteractionHelper.safeEditReply(interaction, {
+                embeds: [successEmbed(
+                    "✨ Item Used Successfully",
+                    `You consumed 1x **${item.name}**.`
+                )]
+            });
         }
-    }
+
+        // Fallback catch notice for passive tools/upgrades that don't need manual activation
+        return await InteractionHelper.safeEditReply(interaction, {
+            embeds: [createEmbed({ 
+                title: "ℹ️ Passive Item", 
+                description: `**${item.name}** is a passive tool/upgrade. It functions automatically background contexts and doesn't need to be run via \`/use\`.`, 
+                color: "warning" 
+            })]
+        });
+
+    }, { command: 'use' })
 };
