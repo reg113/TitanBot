@@ -22,20 +22,61 @@ export default {
         const userData = await getEconomyData(client, interaction.guildId, targetUser.id);
         const userZoo = userData.zoo || {};
 
-        let zooDescription = "";
-        
+        // Categorize animals by value brackets for a cleaner layout
+        const tiers = {
+            '🌟 Mythical Rarities': [],
+            '🏆 Apex Predators': [],
+            '🌲 Wilderness Wildlife': [],
+            '🏡 Backyard Critters': []
+        };
+
+        let totalAnimals = 0;
+
         for (const animal of ANIMAL_LIST) {
             const count = userZoo[animal.id] || 0;
             if (count > 0) {
-                zooDescription += `${animal.emoji} **${animal.name}**: \`x${count}\`\n`;
+                totalAnimals += count;
+                const displayLine = `${animal.emoji} \`${count.toString().padEnd(3)}\` **${animal.name}**`;
+                
+                // Sort into visual sections based on maximum value
+                if (animal.maxPrice > 4000) {
+                    tiers['🌟 Mythical Rarities'].push(displayLine);
+                } else if (animal.maxPrice > 400) {
+                    tiers['🏆 Apex Predators'].push(displayLine);
+                } else if (animal.maxPrice > 100) {
+                    tiers['🌲 Wilderness Wildlife'].push(displayLine);
+                } else {
+                    tiers['🏡 Backyard Critters'].push(displayLine);
+                }
             }
         }
 
         const embed = createEmbed({
-            title: `🐾 ${targetUser.username}'s Zoo Collection`,
-            description: zooDescription || "This zoo is completely empty! Run `/hunt` to find some animals.",
-            color: "primary"
-        }).setThumbnail(targetUser.displayAvatarURL({ size: 256 }));
+            title: `🐾 ${targetUser.username}'s Grand Sanctuary`,
+            color: "#2ECC71" // Premium emerald green theme
+        })
+        .setThumbnail(targetUser.displayAvatarURL({ size: 256 }))
+        .setDescription(`*Managing a thriving ecosystem of **${totalAnimals}** total animals.*\n\n━━━ 🌿 **SANCTUARY EXHIBITS** 🌿 ━━━`);
+
+        let hasAnimals = false;
+
+        for (const [tierName, animals] of Object.entries(tiers)) {
+            if (animals.length > 0) {
+                hasAnimals = true;
+                // Formats items into a clean code block style vertical layout
+                embed.addFields({
+                    name: `\n${tierName}`,
+                    value: animals.join('\n'),
+                    inline: false
+                });
+            }
+        }
+
+        if (!hasAnimals) {
+            embed.setDescription(`*This sanctuary is currently empty.*\n\nUse \`/hunt\` to venture into the wild and capture your first exhibits!`);
+        }
+
+        embed.setFooter({ text: `TitanBot Nature Reserve • View value ranges with /sell` });
 
         await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
     }, { command: 'zoo' })
