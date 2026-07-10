@@ -85,17 +85,16 @@ export async function createInitialHelpMenu(client) {
             {
                 name: '🚀 Getting Started',
                 value: [
-                    '**1. Launch setup** — Run `/configwizard` to configure prefix, mod role, and logs.',
-                    '**2. Enable systems** — Use `/commands dashboard` to turn categories on or off.',                    '**3. Browse commands** — Use the menu below to view categories and commands.',
+                    '**3. Browse commands** — Use the menu below to view categories and commands.',
+                    '*ahlul skull',
                 ].join('\n'),
                 inline: false,
             },
             {
                 name: 'ℹ️ How It Works',
                 value: [
-                    '• Dashboard commands manage each feature visually',
-                    '• Settings are saved per server',
-                    '• Slash commands and prefixes both work once enabled',
+                    '• Select to view the commands',
+                    '• Slash commands and prefixes will both work',
                 ].join('\n'),
                 inline: false,
             },
