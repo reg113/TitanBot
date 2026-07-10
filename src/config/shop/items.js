@@ -50,19 +50,6 @@ roleId: null,
         }
     },
     {
-        id: 'lucky_clover',
-        name: 'Lucky Clover',
-        price: 10000,
-        description: 'Increases the chance of winning a higher payout on `/gamble` once.',
-        type: 'consumable',
-        maxQuantity: 10,
-        effect: {
-            type: 'gamble_boost',
-            multiplier: 1.5,
-            uses: 1
-        }
-    },
-    {
         id: 'fishing_rod',
         name: '🎣 Fishing Rod',
         price: 5000,
