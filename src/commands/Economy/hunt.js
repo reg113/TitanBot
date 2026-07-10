@@ -25,11 +25,13 @@ export default {
         if (cooldowns.has(userId)) {
             const expirationTime = cooldowns.get(userId) + COOLDOWN_TIME_MS;
             if (now < expirationTime) {
-                const timeLeft = ((expirationTime - now) /60 * 1000).toFixed(1);
+                // Convert Milliseconds to Unix Seconds for Discord's markdown engine
+                const discordTimestamp = Math.floor(expirationTime / 1000);
+                
                 throw createError(
                     "On Cooldown",
                     ErrorTypes.RATE_LIMIT,
-                    `🌲 The wilderness is resting. Wait **${timeLeft}m**.`
+                    `🌲 The wilderness is resting. You can hunt again **<t:${discordTimestamp}:R>**.`
                 );
             }
         }
