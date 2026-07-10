@@ -11,7 +11,7 @@ export default {
         if (message.author.bot) return;
         
         // Match your specific target format cleanly
-        const targetCommand = `${PREFIX}ping s`.toLowerCase();
+        const targetCommand = `${PREFIX}ping skull`.toLowerCase();
         if (message.content.toLowerCase().trim() !== targetCommand) return;
 
         const itemId = 'role_pinger';
