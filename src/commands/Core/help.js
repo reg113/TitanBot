@@ -108,7 +108,7 @@ export async function createInitialHelpMenu(client) {
     });
 
     embed.setFooter({ 
-        text: "Made with :skull:" 
+        text: "Made with 💀" 
     });
     embed.setTimestamp();
 
@@ -118,7 +118,7 @@ export async function createInitialHelpMenu(client) {
         .setStyle(ButtonStyle.Danger);
 
     const supportButton = new ButtonBuilder()
-        .setLabel("Support Channel")
+        .setLabel("Support server")
         .setURL("<#1525056027718848642>")
         .setStyle(ButtonStyle.Link);
 
