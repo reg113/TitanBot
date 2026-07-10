@@ -8,10 +8,10 @@ const cooldowns = new Map();
 const COOLDOWN_TIME_MS = 15 * 1000; // 15 seconds (OwO bot style fast pacing)
 
 const PREY_LIST = [
-    { id: 'rabbit', name: 'Rabbit', emoji: '🐇', chance: 40 },
+    { id: 'rabbit', name: 'Rabbit', emoji: '🐇', chance: 30 },
     { id: 'duck', name: 'Duck', emoji: '🦆', chance: 25 },
-    { id: 'deer', name: 'Deer', emoji: '🦌', chance: 20 },
-    { id: 'boar', name: 'Boar', emoji: '🐗', chance: 12 },
+    { id: 'deer', name: 'Deer', emoji: '🦌', chance: 15 },
+    { id: 'unicorn', name: 'unicorn', emoji: '🦄', chance: 1 },
     { id: 'bear', name: 'Bear', emoji: '🐻', chance: 3 } // Rare
 ];
 
