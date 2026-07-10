@@ -58,8 +58,15 @@ export default {
 
         const userData = await getEconomyData(client, guildId, userId);
         
+        // Initialize structures if they don't exist
         if (!userData.zoo) userData.zoo = {};
+        if (!userData.zoo_discovered) userData.zoo_discovered = {};
+
+        // 1. Add to current sellable/battle inventory
         userData.zoo[caught.id] = (userData.zoo[caught.id] || 0) + 1;
+
+        // 2. Add to permanent lifetime checklist log
+        userData.zoo_discovered[caught.id] = true;
 
         await setEconomyData(client, guildId, userId, userData);
 
