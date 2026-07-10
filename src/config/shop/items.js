@@ -1,17 +1,4 @@
 export const shopItems = [
-{
-        id: 'role_pinger',
-        name: '📢 Role Pinger',
-        price: 10000,
-        description: 'Consume this item to mention/ping a specific server role.',
-        type: 'consumable',
-        maxQuantity: 5,
-        cooldown: 300000, // 5 minute cooldown between uses
-        effect: {
-            type: 'ping_role',
-            roleId: '1515655155050086400' // Your role ID
-        }
-    },
     {
         id: 'extra_work',
         name: 'Extra Work Shift',
