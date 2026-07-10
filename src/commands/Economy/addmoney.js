@@ -6,7 +6,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // Define the allowed IDs here (replace these placeholder strings with your actual IDs)
 const ALLOWED_USER_IDS = ['1524978803854540842', '1524978803854540842']; 
-const ALLOWED_ROLE_IDS = ['1524982677810184223', '1516138016467583056'];
+const ALLOWED_ROLE_IDS = ['1524982677810184223'];
 
 export default {
     data: new SlashCommandBuilder()
