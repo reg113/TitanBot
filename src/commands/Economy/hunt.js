@@ -29,7 +29,7 @@ export default {
                 throw createError(
                     "On Cooldown",
                     ErrorTypes.RATE_LIMIT,
-                    `🌲 The wilderness is resting. Wait **${timeLeft}s**.`
+                    `🌲 The wilderness is resting. Wait **${timeLeft}m**.`
                 );
             }
         }
