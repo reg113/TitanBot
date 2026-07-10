@@ -6,7 +6,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { ANIMAL_LIST } from '../../utils/animals.js';
 
 const cooldowns = new Map();
-const COOLDOWN_TIME_MS = 120000 * 1000; 
+const COOLDOWN_TIME_MS = 20 * 60 * 1000; 
 
 export default {
     category: 'Economy',
