@@ -78,32 +78,22 @@ export default {
 
         let hasAnimals = false;
 
-        for (const [tierName, animals] of Object.entries(tiers)) {
-            if (animals.length > 0) {
-                hasAnimals = true;
-                
-                // Splits items into clean, scannable blocks
-                embed.addFields({
-                    name: `─── ${tierName} ───`,
-                    value: animals.join('\n'),
-                    inline: false
-                });
-            }
+for (const [tierName, animals] of Object.entries(tiers)) {
+    if (animals.length > 0) {
+        hasAnimals = true;
+        
+        // If a tier has too many animals, chunk them into separate columns
+        // Discord allows up to ~1024 characters per field value, so chunking keeps it clean.
+        const chunkSize = 5; // Adjust based on how many items you want per column
+        for (let i = 0; i < animals.length; i += chunkSize) {
+            const chunk = animals.slice(i, i + chunkSize);
+            
+            embed.addFields({
+                // Only show the Tier Name on the first column chunk, otherwise keep it clean or label it "Cont."
+                name: i === 0 ? `✨ ${tierName}` : `${tierName} (Cont.)`,
+                value: chunk.join('\n'),
+                inline: true // 👈 This enables the side-by-side columns
+            });
         }
-
-        if (!hasAnimals) {
-            embed.setDescription(
-                `\`\`\`yaml\n` +
-                `Total Animals: 0\n` +
-                `Discovery:     0/${totalUniqueAnimals} (0%)\n` +
-                `\`\`\`\n` +
-                `⬛⬛⬛⬛⬛⬛⬛⬛⬛⬛\n\n` +
-                `❌ No records found. Run \`/hunt\` to populate your collection.`
-            );
-        }
-
-        embed.setFooter({ text: `SYSTEM LOG • Run /battle to duel other collectors` });
-
-        await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-    }, { command: 'zoo' })
-};
+    }
+}
