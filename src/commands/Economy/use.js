@@ -1,5 +1,4 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { createEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
@@ -17,7 +16,7 @@ export default {
         ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
-        // Defer publicly so the broadcast is visible to everyone in the channel
+        // Defer publicly (ephemeral: false) so the text broadcast is visible to the entire channel
         const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: false });
         if (!deferred) return;
 
@@ -25,7 +24,7 @@ export default {
         const guildId = interaction.guildId;
         const itemId = interaction.options.getString('item_id').toLowerCase();
 
-        // 1. Verify the item exists in the master configuration
+        // 1. Verify the item exists in the shop items configuration
         const item = getItemById(itemId);
         if (!item) {
             throw createError(
@@ -36,10 +35,15 @@ export default {
             );
         }
 
-        // 2. Fetch user data and check inventory levels
+        // 2. Fetch user data and ensure inventory objects are initialized
         const userData = await getEconomyData(client, guildId, userId);
-        const currentQuantity = userData.inventory?.[itemId] || 0;
+        if (!userData.inventory) {
+            userData.inventory = {};
+        }
 
+        const currentQuantity = userData.inventory[itemId] || 0;
+
+        // 3. Check if they actually own the item
         if (currentQuantity <= 0) {
             throw createError(
                 "Item not owned",
@@ -49,19 +53,18 @@ export default {
             );
         }
 
-        // 3. Process item execution behavior based on ID
+        // 4. Item execution logic
         if (itemId === 'party_popper') {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
-        
+
             // --- SAMPLE BROADCAST PLAIN TEXT ---
-            // You can customize the primary text and layout below
             const broadcastMessage = `🎉 **PARTY POPPER ACTIVATED!** 🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${interaction.user.toString()} • ${userData.inventory[itemId]} remaining`;
-        
-            // Send as standard content instead of an embed
+
+            // Reply with the clean markdown string
             await InteractionHelper.safeEditReply(interaction, { content: broadcastMessage });
-        
+
         } else {
             // Guard fallback for items that are consumables but don't have functional code yet
             throw createError(
@@ -71,3 +74,5 @@ export default {
                 { itemId }
             );
         }
+    }, { command: 'use' })
+};
