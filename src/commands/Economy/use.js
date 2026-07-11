@@ -82,7 +82,7 @@ export default {
             const messageMain = `💀\n<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Delete the user's triggering command message (e.g., "!use party_popper")
+                // Delete the user's triggering command message (e.g., "!use skull")
                 await interaction.delete().catch(() => {});
 
                 // Send the alert first, then follow it up with the main text body
