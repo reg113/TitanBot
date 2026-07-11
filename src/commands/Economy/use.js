@@ -88,8 +88,11 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // AFTER DOING ALL THAT: Delete the user's triggering text command (e.g., "!!use party_popper")
-                await interaction.delete().catch(() => {});
+                // AFTER DOING ALL THAT: Attempt to delete the user's triggering text command
+                await interaction.delete().catch(err => {
+                    console.error("🔴 [DEBUG ERROR] Could not delete user message. Reason:");
+                    console.error(err);
+                });
 
                 // Finally, clear out the temporary alert message after 10 seconds
                 setTimeout(() => {
