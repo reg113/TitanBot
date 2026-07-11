@@ -25,7 +25,7 @@ export default {
         
         let itemId = '';
         if (isMessage) {
-            // Parse item_id from text content (e.g., "!use party_popper" -> "party_popper")
+            // Parse item_id from text content (e.g., "!!use party_popper" -> "party_popper")
             const args = interaction.content.trim().split(/ +/);
             itemId = args[1] ? args[1].toLowerCase() : '';
             
@@ -82,14 +82,16 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Delete the user's triggering command message (e.g., "!use party_popper")
-                await interaction.delete().catch(() => {});
-
-                // Send the alert first, then follow it up with the main text body
+                // First, send the alert message
                 const temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                
+                // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // Delete the alert line after 10 seconds
+                // AFTER DOING ALL THAT: Delete the user's triggering text command (e.g., "!!use party_popper")
+                await interaction.delete().catch(() => {});
+
+                // Finally, clear out the temporary alert message after 10 seconds
                 setTimeout(() => {
                     temporaryMessage.delete().catch(() => {});
                 }, 10000);
