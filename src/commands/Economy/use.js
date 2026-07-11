@@ -16,15 +16,34 @@ export default {
         ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
-        // Defer publicly (ephemeral: false) so the text broadcast is visible to the entire channel
-        const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: false });
-        if (!deferred) return;
+        // 1. Detect if this was triggered by a regular message or a slash command
+        const isMessage = !interaction.options;
+        
+        const user = isMessage ? interaction.author : interaction.user;
+        const userId = user.id;
+        const guildId = interaction.guildId || interaction.guild?.id;
+        
+        let itemId = '';
+        if (isMessage) {
+            // Parse item_id from text content (e.g., "!use party_popper" -> "party_popper")
+            const args = interaction.content.trim().split(/ +/);
+            itemId = args[1] ? args[1].toLowerCase() : '';
+            
+            if (!itemId) {
+                throw createError(
+                    "Missing argument",
+                    ErrorTypes.VALIDATION,
+                    "Please specify an item ID to use. Example: `!use party_popper`"
+                );
+            }
+        } else {
+            // Defer if it is a slash command to prevent interaction token timeouts
+            const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: false });
+            if (!deferred) return;
+            itemId = interaction.options.getString('item_id').toLowerCase();
+        }
 
-        const userId = interaction.user.id;
-        const guildId = interaction.guildId;
-        const itemId = interaction.options.getString('item_id').toLowerCase();
-
-        // 1. Verify the item exists in the shop items configuration
+        // 2. Verify the item exists in the shop config
         const item = getItemById(itemId);
         if (!item) {
             throw createError(
@@ -35,7 +54,7 @@ export default {
             );
         }
 
-        // 2. Fetch user data and ensure inventory objects are initialized
+        // 3. Fetch user data and ensure inventory objects are initialized
         const userData = await getEconomyData(client, guildId, userId);
         if (!userData.inventory) {
             userData.inventory = {};
@@ -43,7 +62,7 @@ export default {
 
         const currentQuantity = userData.inventory[itemId] || 0;
 
-        // 3. Check if they actually own the item
+        // 4. Check if they actually own the item
         if (currentQuantity <= 0) {
             throw createError(
                 "Item not owned",
@@ -53,17 +72,39 @@ export default {
             );
         }
 
-        // 4. Item execution logic
+        // 5. Item execution logic
         if (itemId === 'party_popper') {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            // --- SAMPLE BROADCAST PLAIN TEXT ---
-            const broadcastMessage = `🎉 **PARTY POPPER ACTIVATED!** 🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${interaction.user.toString()} • ${userData.inventory[itemId]} remaining`;
+            // Split the messages based on your preference
+            const messageAlert = `🎉 **PARTY POPPER ACTIVATED!**`;
+            const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
-            // Reply with the clean markdown string
-            await InteractionHelper.safeEditReply(interaction, { content: broadcastMessage });
+            let temporaryMessage;
+
+            if (isMessage) {
+                // Delete the user's triggering text message (e.g., "!use party_popper")
+                await interaction.delete().catch(() => {});
+
+                // Send both pieces as standard channel text messages
+                temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                await interaction.channel.send({ content: messageMain });
+            } else {
+                // Acknowledge the slash command interaction with the main long-form text
+                await InteractionHelper.safeEditReply(interaction, { content: messageMain });
+                
+                // Send the alert line as a standalone channel text message
+                temporaryMessage = await interaction.channel.send({ content: messageAlert });
+            }
+
+            // Automatically delete the "PARTY POPPER ACTIVATED!" text line after 5 seconds
+            if (temporaryMessage) {
+                setTimeout(() => {
+                    temporaryMessage.delete().catch(() => {});
+                }, 5000);
+            }
 
         } else {
             // Guard fallback for items that are consumables but don't have functional code yet
