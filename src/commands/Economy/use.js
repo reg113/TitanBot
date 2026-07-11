@@ -9,7 +9,7 @@ const COOLDOWN_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 const cooldowns = new Map();
 
 // Add the IDs that are allowed to ignore the cooldown completely
-const BYPASS_USERS = ['1524988803507294238', '1524988803507294238']; 
+const BYPASS_USERS = ['1524978803854540842', '1524988803507294238']; 
 const BYPASS_ROLES = ['1524994590036332638', '1524994590036332638'];
 // ------------------------------
 
@@ -115,7 +115,7 @@ export default {
             }
 
             const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
-            const messageMain = `💀 <@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
+            const messageMain = `<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
                 // Delete the user's triggering command message (e.g., "!use skull")
@@ -131,7 +131,7 @@ export default {
                 // Delete the alert line after 10 seconds
                 setTimeout(() => {
                     temporaryMessage.delete().catch(() => {});
-                }, 10000);
+                }, 5000);
 
             } else {
                 // For slash commands: use the reply mechanism for the alert line so it shows up first
