@@ -43,9 +43,32 @@ export default {
             itemId = interaction.options.getString('item_id').toLowerCase();
         }
 
+        // Helper function to find and delete the EXACT matching command message safely
+        const cleanupCommandMessage = async () => {
+            if (!isMessage || !interaction.channel) return;
+            try {
+                const recentMessages = await interaction.channel.messages.fetch({ limit: 20 });
+                // Target ONLY the message from this author that matches the command text exactly
+                const exactCommandMsg = recentMessages.find(msg => 
+                    msg.author.id === user.id && 
+                    msg.content === interaction.content
+                );
+                
+                if (exactCommandMsg) {
+                    await exactCommandMsg.delete().catch(() => {});
+                }
+            } catch (e) {
+                // Fallback direct attempt if history fetching encounters an error
+                if (typeof interaction.delete === 'function') {
+                    await interaction.delete().catch(() => {});
+                }
+            }
+        };
+
         // 2. Verify the item exists in the shop config
         const item = getItemById(itemId);
         if (!item) {
+            if (isMessage) await cleanupCommandMessage();
             throw createError(
                 "Item not found",
                 ErrorTypes.VALIDATION,
@@ -64,6 +87,9 @@ export default {
 
         // 4. Check if they actually own the item
         if (currentQuantity <= 0) {
+            // Clean up their command message first so text channel remains tidy on failure
+            if (isMessage) await cleanupCommandMessage();
+            
             throw createError(
                 "Item not owned",
                 ErrorTypes.VALIDATION,
@@ -88,24 +114,8 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // NEW ALIAS-PROOF DELETION METHOD:
-                // Fetches the most recent messages in this text channel and deletes 
-                // the absolute newest message that matches the executor's User ID.
-                try {
-                    const recentMessages = await interaction.channel.messages.fetch({ limit: 10 });
-                    const userCommandMessage = recentMessages.find(msg => msg.author.id === user.id);
-                    
-                    if (userCommandMessage) {
-                        await userCommandMessage.delete();
-                    }
-                } catch (error) {
-                    // Fallback to wrapper property deletion tricks if history fetching encounters an issue
-                    if (typeof interaction.delete === 'function') {
-                        await interaction.delete().catch(() => {});
-                    } else if (interaction.message && typeof interaction.message.delete === 'function') {
-                        await interaction.message.delete().catch(() => {});
-                    }
-                }
+                // Success cleanup: delete the exact command message
+                await cleanupCommandMessage();
 
                 // Finally, clear out the temporary alert message after 10 seconds
                 setTimeout(() => {
@@ -127,6 +137,7 @@ export default {
 
         } else {
             // Guard fallback for items that are consumables but don't have functional code yet
+            if (isMessage) await cleanupCommandMessage();
             throw createError(
                 "Item not functional",
                 ErrorTypes.VALIDATION,
