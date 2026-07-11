@@ -82,17 +82,20 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Delete the user's triggering command message (e.g., "!use party_popper")
-                await interaction.delete().catch(() => {});
+                // Reply directly to the user's command message to link them
+                const temporaryMessage = await interaction.reply({ content: messageAlert }).catch(() => {
+                    // Fallback to a normal channel message if your framework wrapper handles replies differently
+                    return interaction.channel.send({ content: messageAlert });
+                });
 
-                // Send the alert first, then follow it up with the main text body
-                const temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                // Drop the permanent main celebration message right beneath it
                 await interaction.channel.send({ content: messageMain });
 
-                // Delete the alert line after 10 seconds
-                setTimeout(() => {
-                    temporaryMessage.delete().catch(() => {});
-                }, 5000);
+                // Wait 10 seconds, then wipe out both the alert reply AND the user's original command message
+                setTimeout(async () => {
+                    await temporaryMessage.delete().catch(() => {});
+                    await interaction.delete().catch(() => {});
+                }, 10000);
 
             } else {
                 // For slash commands: use the reply mechanism for the alert line so it shows up first
