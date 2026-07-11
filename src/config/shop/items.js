@@ -1,4 +1,15 @@
 export const shopItems = [
+{
+    id: 'party_popper',
+    name: '🎉 Party Popper',
+    price: 2500,
+    description: 'Set off a massive celebration in the current channel! Consumed upon use.',
+    type: 'consumable',
+    maxQuantity: 10,
+    effect: {
+        type: 'channel_broadcast'
+    }
+},
     {
         id: 'extra_work',
         name: 'Extra Work Shift',
