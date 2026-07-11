@@ -88,19 +88,45 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // TARGET SPECIFIC ID: Fetch the exact message ID from the channel and nuke it
-                const targetMessageId = interaction.id || interaction.message?.id;
-                
-                if (targetMessageId && interaction.channel) {
+                // Try to find the exact message ID through deep object checking first
+                const exactId = interaction.id || 
+                                interaction.message?.id || 
+                                interaction.messageId || 
+                                interaction.rawMessage?.id;
+
+                let deletedCount = false;
+
+                if (exactId) {
                     try {
-                        // Fetch the authentic message directly from the channel cache/API
-                        const exactMessage = await interaction.channel.messages.fetch(targetMessageId);
-                        if (exactMessage) {
-                            await exactMessage.delete();
+                        await interaction.channel.messages.delete(exactId);
+                        deletedCount = true;
+                    } catch (e) {
+                        // If direct deletion fails, fall through to our ultra-safe history scanner
+                    }
+                }
+
+                // FALLBACK SCANNER: Only runs if your custom framework hid the message ID entirely
+                if (!deletedCount) {
+                    try {
+                        const recentMessages = await interaction.channel.messages.fetch({ limit: 15 });
+                        
+                        // Filter strictly for YOUR messages containing the usage terms,
+                        // and sort by 'createdTimestamp' descending to grab the absolute youngest one.
+                        const triggerMessage = recentMessages
+                            .filter(msg => 
+                                msg.author.id === user.id && 
+                                msg.content.toLowerCase().includes('use') && 
+                                msg.content.toLowerCase().includes('party_popper')
+                            )
+                            .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+                            .first();
+
+                        if (triggerMessage) {
+                            await triggerMessage.delete().catch(() => {});
                         }
                     } catch (e) {
-                        // Direct backup deletion routine if fetching fails
-                        await interaction.channel.messages.delete(targetMessageId).catch(() => {});
+                        // Fallback safety if channel history fetching fails
+                        if (interaction.delete) await interaction.delete().catch(() => {});
                     }
                 }
 
