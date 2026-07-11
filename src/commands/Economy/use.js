@@ -25,7 +25,7 @@ export default {
         
         let itemId = '';
         if (isMessage) {
-            // Parse item_id from text content (e.g., "!!use party_popper" -> "party_popper")
+            // Parse item_id from text content (e.g., "!use party_popper" -> "party_popper")
             const args = interaction.content.trim().split(/ +/);
             itemId = args[1] ? args[1].toLowerCase() : '';
             
@@ -43,32 +43,9 @@ export default {
             itemId = interaction.options.getString('item_id').toLowerCase();
         }
 
-        // Bulletproof Cleanup Routine: Finds the exact message that triggered this script execution
-        const cleanupCommandMessage = async () => {
-            if (!isMessage || !interaction.channel) return;
-            try {
-                // Fetch the 15 most recent messages in the channel (ordered newest to oldest)
-                const recentMessages = await interaction.channel.messages.fetch({ limit: 15 });
-                
-                // Find the first (newest) message sent by this user containing the targeted item ID
-                const exactCommandMsg = recentMessages.find(msg => 
-                    msg.author.id === user.id && 
-                    msg.content.toLowerCase().includes(itemId)
-                );
-                
-                if (exactCommandMsg) {
-                    await exactCommandMsg.delete();
-                }
-            } catch (error) {
-                // Out logs to terminal if Discord blocks the action due to permissions (e.g., missing Manage Messages)
-                console.error(`[Use Command Cleanup Error]: Could not delete message. Reason: ${error.message}`);
-            }
-        };
-
         // 2. Verify the item exists in the shop config
         const item = getItemById(itemId);
         if (!item) {
-            if (isMessage) await cleanupCommandMessage();
             throw createError(
                 "Item not found",
                 ErrorTypes.VALIDATION,
@@ -87,9 +64,6 @@ export default {
 
         // 4. Check if they actually own the item
         if (currentQuantity <= 0) {
-            // Cleans up the command text even if the user execution fails ownership check
-            if (isMessage) await cleanupCommandMessage();
-            
             throw createError(
                 "Item not owned",
                 ErrorTypes.VALIDATION,
@@ -108,19 +82,17 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // First, send the alert message
+                // Delete the user's triggering command message (e.g., "!use party_popper")
+                await interaction.delete().catch(() => {});
+
+                // Send the alert first, then follow it up with the main text body
                 const temporaryMessage = await interaction.channel.send({ content: messageAlert });
-                
-                // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // Run the proximity matching cleanup routine
-                await cleanupCommandMessage();
-
-                // Finally, clear out the temporary alert message after 10 seconds
+                // Delete the alert line after 10 seconds
                 setTimeout(() => {
                     temporaryMessage.delete().catch(() => {});
-                }, 10000);
+                }, 5000);
 
             } else {
                 // For slash commands: use the reply mechanism for the alert line so it shows up first
@@ -137,7 +109,6 @@ export default {
 
         } else {
             // Guard fallback for items that are consumables but don't have functional code yet
-            if (isMessage) await cleanupCommandMessage();
             throw createError(
                 "Item not functional",
                 ErrorTypes.VALIDATION,
