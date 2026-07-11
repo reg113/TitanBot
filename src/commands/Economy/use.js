@@ -82,19 +82,31 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Reply directly to the user's command message to link them
-                const temporaryMessage = await interaction.reply({ content: messageAlert }).catch(() => {
-                    // Fallback to a normal channel message if your framework wrapper handles replies differently
-                    return interaction.channel.send({ content: messageAlert });
-                });
+                // Extract the native Discord.js Message object hidden inside your framework's wrapper
+                const rawMessage = interaction.message || interaction.rawMessage || interaction.msg || (interaction.author ? interaction : null);
+                let temporaryMessage;
+
+                // Force a native Discord inline reply if the raw message object is found
+                if (rawMessage && typeof rawMessage.reply === 'function') {
+                    temporaryMessage = await rawMessage.reply({ content: messageAlert }).catch(() => {
+                        return interaction.channel.send({ content: messageAlert });
+                    });
+                } else {
+                    temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                }
 
                 // Drop the permanent main celebration message right beneath it
                 await interaction.channel.send({ content: messageMain });
 
-                // Wait 10 seconds, then wipe out both the alert reply AND the user's original command message
+                // Wait 10 seconds, then cleanly delete both the alert reply and your original command message
                 setTimeout(async () => {
-                    await temporaryMessage.delete().catch(() => {});
-                    await interaction.delete().catch(() => {});
+                    if (temporaryMessage) await temporaryMessage.delete().catch(() => {});
+                    
+                    if (rawMessage && typeof rawMessage.delete === 'function') {
+                        await rawMessage.delete().catch(() => {});
+                    } else if (typeof interaction.delete === 'function') {
+                        await interaction.delete().catch(() => {});
+                    }
                 }, 10000);
 
             } else {
