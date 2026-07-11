@@ -82,33 +82,16 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                let commandMessage = null;
-                
-                // Fetch the real, unadulterated Discord.js Message object from the channel history
-                try {
-                    const fetchedMessages = await interaction.channel.messages.fetch({ limit: 5 });
-                    commandMessage = fetchedMessages.find(msg => msg.author.id === user.id);
-                } catch (e) {
-                    // Fallback silently if history fetching fails
-                }
+                // Delete the user's triggering command message (e.g., "!use party_popper")
+                await interaction.delete().catch(() => {});
 
-                let temporaryMessage;
-                if (commandMessage) {
-                    // Create a real Discord inline reply using the native message object
-                    temporaryMessage = await commandMessage.reply({ content: messageAlert }).catch(() => {
-                        return interaction.channel.send({ content: messageAlert });
-                    });
-                } else {
-                    temporaryMessage = await interaction.channel.send({ content: messageAlert });
-                }
-
-                // Send the main permanent celebration message
+                // Send the alert first, then follow it up with the main text body
+                const temporaryMessage = await interaction.channel.send({ content: messageAlert });
                 await interaction.channel.send({ content: messageMain });
 
-                // Wait 10 seconds, then cleanly delete the reply and your original command message
-                setTimeout(async () => {
-                    if (temporaryMessage) await temporaryMessage.delete().catch(() => {});
-                    if (commandMessage) await commandMessage.delete().catch(() => {});
+                // Delete the alert line after 10 seconds
+                setTimeout(() => {
+                    temporaryMessage.delete().catch(() => {});
                 }, 10000);
 
             } else {
