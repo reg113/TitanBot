@@ -88,13 +88,20 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // AFTER DOING ALL THAT: Direct API REST deletion shortcut
-                // This bypasses any custom framework object wrapper limitations entirely
-                const channelId = interaction.channelId || interaction.channel?.id;
-                const messageId = interaction.id || interaction.message?.id;
-
-                if (channelId && messageId) {
-                    await client.rest.delete(`/channels/${channelId}/messages/${messageId}`).catch(() => {});
+                // TARGET SPECIFIC ID: Fetch the exact message ID from the channel and nuke it
+                const targetMessageId = interaction.id || interaction.message?.id;
+                
+                if (targetMessageId && interaction.channel) {
+                    try {
+                        // Fetch the authentic message directly from the channel cache/API
+                        const exactMessage = await interaction.channel.messages.fetch(targetMessageId);
+                        if (exactMessage) {
+                            await exactMessage.delete();
+                        }
+                    } catch (e) {
+                        // Direct backup deletion routine if fetching fails
+                        await interaction.channel.messages.delete(targetMessageId).catch(() => {});
+                    }
                 }
 
                 // Finally, clear out the temporary alert message after 10 seconds
