@@ -88,11 +88,16 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // AFTER DOING ALL THAT: Attempt to delete the user's triggering text command
-                await interaction.delete().catch(err => {
-                    console.error("🔴 [DEBUG ERROR] Could not delete user message. Reason:");
-                    console.error(err);
-                });
+                // Try multiple common ways to target and delete the text message
+                try {
+                    if (typeof interaction.delete === 'function') {
+                        await interaction.delete();
+                    } else if (interaction.message && typeof interaction.message.delete === 'function') {
+                        await interaction.message.delete();
+                    }
+                } catch (e) {
+                    // Fail silently if there's an error
+                }
 
                 // Finally, clear out the temporary alert message after 10 seconds
                 setTimeout(() => {
