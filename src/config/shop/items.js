@@ -1,9 +1,9 @@
 export const shopItems = [
 {
-    id: 'party_popper',
-    name: '🎉 Party Popper',
+    id: 'skull',
+    name: '💀 Ahlul Skull ping',
     price: 2500,
-    description: 'Set off a massive celebration in the current channel! Consumed upon use.',
+    description: 'Set off a massive Ahlul Skull ping in the current channel! Consumed upon use.',
     type: 'consumable',
     maxQuantity: 10,
     effect: {
