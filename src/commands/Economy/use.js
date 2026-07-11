@@ -78,32 +78,33 @@ export default {
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            // Split the messages based on your preference
             const messageAlert = `🎉 **PARTY POPPER ACTIVATED!**`;
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
-            let temporaryMessage;
-
             if (isMessage) {
-                // Delete the user's triggering text message (e.g., "!use party_popper")
+                // Delete the user's triggering command message (e.g., "!use party_popper")
                 await interaction.delete().catch(() => {});
 
-                // Send both pieces as standard channel text messages
-                temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                // Send the alert first, then follow it up with the main text body
+                const temporaryMessage = await interaction.channel.send({ content: messageAlert });
                 await interaction.channel.send({ content: messageMain });
-            } else {
-                // Acknowledge the slash command interaction with the main long-form text
-                await InteractionHelper.safeEditReply(interaction, { content: messageMain });
-                
-                // Send the alert line as a standalone channel text message
-                temporaryMessage = await interaction.channel.send({ content: messageAlert });
-            }
 
-            // Automatically delete the "PARTY POPPER ACTIVATED!" text line after 5 seconds
-            if (temporaryMessage) {
+                // Delete the alert line after 10 seconds
                 setTimeout(() => {
                     temporaryMessage.delete().catch(() => {});
-                }, 5000);
+                }, 10000);
+
+            } else {
+                // For slash commands: use the reply mechanism for the alert line so it shows up first
+                await InteractionHelper.safeEditReply(interaction, { content: messageAlert });
+                
+                // Immediately drop the permanent main message beneath it
+                await interaction.channel.send({ content: messageMain });
+                
+                // Cleanly purge the interaction's alert response after 10 seconds
+                setTimeout(() => {
+                    interaction.deleteReply().catch(() => {});
+                }, 10000);
             }
 
         } else {
