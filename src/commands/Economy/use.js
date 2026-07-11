@@ -4,6 +4,15 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { getItemById } from '../../config/shop/items.js';
 
+// --- COOLDOWN CONFIGURATION ---
+const COOLDOWN_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const cooldowns = new Map();
+
+// Add the IDs that are allowed to ignore the cooldown completely
+const BYPASS_USERS = ['1524988803507294238', '1524988803507294238']; 
+const BYPASS_ROLES = ['1524994590036332638', '1524994590036332638'];
+// ------------------------------
+
 export default {
     data: new SlashCommandBuilder()
         .setName('use')
@@ -25,7 +34,7 @@ export default {
         
         let itemId = '';
         if (isMessage) {
-            // Parse item_id from text content (e.g., "!use party_popper" -> "party_popper")
+            // Parse item_id from text content (e.g., "!use skull" -> "skull")
             const args = interaction.content.trim().split(/ +/);
             itemId = args[1] ? args[1].toLowerCase() : '';
             
@@ -72,13 +81,40 @@ export default {
             );
         }
 
+        // 4.5. Cooldown Verification Logic
+        const isBypassUser = BYPASS_USERS.includes(userId);
+        const isBypassRole = interaction.member?.roles?.cache?.some(role => BYPASS_ROLES.includes(role.id)) || false;
+        const hasBypass = isBypassUser || isBypassRole;
+
+        if (!hasBypass && cooldowns.has(userId)) {
+            const expirationTime = cooldowns.get(userId);
+            const now = Date.now();
+
+            if (now < expirationTime) {
+                const timeLeft = expirationTime - now;
+                const minutes = Math.floor(timeLeft / 60000);
+                const seconds = Math.floor((timeLeft % 60000) / 1000);
+
+                throw createError(
+                    "Command on Cooldown",
+                    ErrorTypes.VALIDATION,
+                    `Slow down! You can use this command again in **${minutes}m ${seconds}s**.`
+                );
+            }
+        }
+
         // 5. Item execution logic
         if (itemId === 'skull') {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            const messageAlert = `🎉 **PARTY POPPER ACTIVATED!**`;
+            // Apply the cooldown timestamp now that usage is verified and successful
+            if (!hasBypass) {
+                cooldowns.set(userId, Date.now() + COOLDOWN_DURATION);
+            }
+
+            const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
             const messageMain = `💀 <@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
