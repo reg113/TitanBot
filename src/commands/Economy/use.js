@@ -43,25 +43,25 @@ export default {
             itemId = interaction.options.getString('item_id').toLowerCase();
         }
 
-        // Helper function to find and delete the EXACT matching command message safely
+        // Bulletproof Cleanup Routine: Finds the exact message that triggered this script execution
         const cleanupCommandMessage = async () => {
             if (!isMessage || !interaction.channel) return;
             try {
-                const recentMessages = await interaction.channel.messages.fetch({ limit: 20 });
-                // Target ONLY the message from this author that matches the command text exactly
+                // Fetch the 15 most recent messages in the channel (ordered newest to oldest)
+                const recentMessages = await interaction.channel.messages.fetch({ limit: 15 });
+                
+                // Find the first (newest) message sent by this user containing the targeted item ID
                 const exactCommandMsg = recentMessages.find(msg => 
                     msg.author.id === user.id && 
-                    msg.content === interaction.content
+                    msg.content.toLowerCase().includes(itemId)
                 );
                 
                 if (exactCommandMsg) {
-                    await exactCommandMsg.delete().catch(() => {});
+                    await exactCommandMsg.delete();
                 }
-            } catch (e) {
-                // Fallback direct attempt if history fetching encounters an error
-                if (typeof interaction.delete === 'function') {
-                    await interaction.delete().catch(() => {});
-                }
+            } catch (error) {
+                // Out logs to terminal if Discord blocks the action due to permissions (e.g., missing Manage Messages)
+                console.error(`[Use Command Cleanup Error]: Could not delete message. Reason: ${error.message}`);
             }
         };
 
@@ -87,7 +87,7 @@ export default {
 
         // 4. Check if they actually own the item
         if (currentQuantity <= 0) {
-            // Clean up their command message first so text channel remains tidy on failure
+            // Cleans up the command text even if the user execution fails ownership check
             if (isMessage) await cleanupCommandMessage();
             
             throw createError(
@@ -114,7 +114,7 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // Success cleanup: delete the exact command message
+                // Run the proximity matching cleanup routine
                 await cleanupCommandMessage();
 
                 // Finally, clear out the temporary alert message after 10 seconds
