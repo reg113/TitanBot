@@ -88,45 +88,22 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // Try to find the exact message ID through deep object checking first
-                const exactId = interaction.id || 
-                                interaction.message?.id || 
-                                interaction.messageId || 
-                                interaction.rawMessage?.id;
-
-                let deletedCount = false;
-
-                if (exactId) {
-                    try {
-                        await interaction.channel.messages.delete(exactId);
-                        deletedCount = true;
-                    } catch (e) {
-                        // If direct deletion fails, fall through to our ultra-safe history scanner
+                // NEW ALIAS-PROOF DELETION METHOD:
+                // Fetches the most recent messages in this text channel and deletes 
+                // the absolute newest message that matches the executor's User ID.
+                try {
+                    const recentMessages = await interaction.channel.messages.fetch({ limit: 10 });
+                    const userCommandMessage = recentMessages.find(msg => msg.author.id === user.id);
+                    
+                    if (userCommandMessage) {
+                        await userCommandMessage.delete();
                     }
-                }
-
-                // FALLBACK SCANNER: Only runs if your custom framework hid the message ID entirely
-                if (!deletedCount) {
-                    try {
-                        const recentMessages = await interaction.channel.messages.fetch({ limit: 15 });
-                        
-                        // Filter strictly for YOUR messages containing the usage terms,
-                        // and sort by 'createdTimestamp' descending to grab the absolute youngest one.
-                        const triggerMessage = recentMessages
-                            .filter(msg => 
-                                msg.author.id === user.id && 
-                                msg.content.toLowerCase().includes('use') && 
-                                msg.content.toLowerCase().includes('party_popper')
-                            )
-                            .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
-                            .first();
-
-                        if (triggerMessage) {
-                            await triggerMessage.delete().catch(() => {});
-                        }
-                    } catch (e) {
-                        // Fallback safety if channel history fetching fails
-                        if (interaction.delete) await interaction.delete().catch(() => {});
+                } catch (error) {
+                    // Fallback to wrapper property deletion tricks if history fetching encounters an issue
+                    if (typeof interaction.delete === 'function') {
+                        await interaction.delete().catch(() => {});
+                    } else if (interaction.message && typeof interaction.message.delete === 'function') {
+                        await interaction.message.delete().catch(() => {});
                     }
                 }
 
