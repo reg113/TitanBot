@@ -82,31 +82,33 @@ export default {
             const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Extract the native Discord.js Message object hidden inside your framework's wrapper
-                const rawMessage = interaction.message || interaction.rawMessage || interaction.msg || (interaction.author ? interaction : null);
-                let temporaryMessage;
+                let commandMessage = null;
+                
+                // Fetch the real, unadulterated Discord.js Message object from the channel history
+                try {
+                    const fetchedMessages = await interaction.channel.messages.fetch({ limit: 5 });
+                    commandMessage = fetchedMessages.find(msg => msg.author.id === user.id);
+                } catch (e) {
+                    // Fallback silently if history fetching fails
+                }
 
-                // Force a native Discord inline reply if the raw message object is found
-                if (rawMessage && typeof rawMessage.reply === 'function') {
-                    temporaryMessage = await rawMessage.reply({ content: messageAlert }).catch(() => {
+                let temporaryMessage;
+                if (commandMessage) {
+                    // Create a real Discord inline reply using the native message object
+                    temporaryMessage = await commandMessage.reply({ content: messageAlert }).catch(() => {
                         return interaction.channel.send({ content: messageAlert });
                     });
                 } else {
                     temporaryMessage = await interaction.channel.send({ content: messageAlert });
                 }
 
-                // Drop the permanent main celebration message right beneath it
+                // Send the main permanent celebration message
                 await interaction.channel.send({ content: messageMain });
 
-                // Wait 10 seconds, then cleanly delete both the alert reply and your original command message
+                // Wait 10 seconds, then cleanly delete the reply and your original command message
                 setTimeout(async () => {
                     if (temporaryMessage) await temporaryMessage.delete().catch(() => {});
-                    
-                    if (rawMessage && typeof rawMessage.delete === 'function') {
-                        await rawMessage.delete().catch(() => {});
-                    } else if (typeof interaction.delete === 'function') {
-                        await interaction.delete().catch(() => {});
-                    }
+                    if (commandMessage) await commandMessage.delete().catch(() => {});
                 }, 10000);
 
             } else {
