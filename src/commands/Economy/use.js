@@ -11,7 +11,7 @@ export default {
         .addStringOption(option =>
             option
                 .setName('item_id')
-                .setDescription('The ID of the item you want to use (e.g., party_popper)')
+                .setDescription('The ID of the item you want to use (e.g., skull)')
                 .setRequired(true)
         ),
 
@@ -33,7 +33,7 @@ export default {
                 throw createError(
                     "Missing argument",
                     ErrorTypes.VALIDATION,
-                    "Please specify an item ID to use. Example: `!use party_popper`"
+                    "Please specify an item ID to use. Example: `use skull`"
                 );
             }
         } else {
@@ -73,13 +73,13 @@ export default {
         }
 
         // 5. Item execution logic
-        if (itemId === 'party_popper') {
+        if (itemId === 'skull') {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            const messageAlert = `🎉 **PARTY POPPER ACTIVATED!**`;
-            const messageMain = `🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
+            const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
+            const messageMain = `💀\n<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
                 // Delete the user's triggering command message (e.g., "!use party_popper")
