@@ -78,8 +78,8 @@ export default {
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
-            const messageMain = `<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
+            const messageAlert = `🎉 **PARTY POPPER ACTIVATED!**`;
+            const messageMain = `💀 <@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
                 // Delete the user's triggering command message (e.g., "!use skull")
@@ -87,7 +87,10 @@ export default {
 
                 // Send the alert first, then follow it up with the main text body
                 const temporaryMessage = await interaction.channel.send({ content: messageAlert });
-                await interaction.channel.send({ content: messageMain });
+                const mainMessage = await interaction.channel.send({ content: messageMain });
+                
+                // Add the skull reaction to the main ping message
+                await mainMessage.react('💀').catch(() => {});
 
                 // Delete the alert line after 10 seconds
                 setTimeout(() => {
@@ -99,7 +102,10 @@ export default {
                 await InteractionHelper.safeEditReply(interaction, { content: messageAlert });
                 
                 // Immediately drop the permanent main message beneath it
-                await interaction.channel.send({ content: messageMain });
+                const mainMessage = await interaction.channel.send({ content: messageMain });
+                
+                // Add the skull reaction to the main ping message
+                await mainMessage.react('💀').catch(() => {});
                 
                 // Cleanly purge the interaction's alert response after 10 seconds
                 setTimeout(() => {
