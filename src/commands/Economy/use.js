@@ -54,17 +54,14 @@ export default {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
-
-            // --- SAMPLE BROADCAST MESSAGE ---
-            // You can easily modify the title, description, and emojis below!
-            const embed = createEmbed({
-                title: '🎉 PARTY POPPER ACTIVATED! 🎉',
-                description: `**${interaction.user.toString()}** just popped a **Party Popper**! 🥳✨\n\n Let's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺`,
-                color: '#FF69B4' // Vibrant pink party color
-            }).setFooter({ text: `Remaining in your inventory: ${userData.inventory[itemId]}` });
-
-            await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-
+        
+            // --- SAMPLE BROADCAST PLAIN TEXT ---
+            // You can customize the primary text and layout below
+            const broadcastMessage = `🎉 **PARTY POPPER ACTIVATED!** 🥳✨\nLet's turn the hype up in this channel! Grab some cake 🍰, blast the music 🎶, and get celebrating! 💃🕺\n\n-# Activated by ${interaction.user.toString()} • ${userData.inventory[itemId]} remaining`;
+        
+            // Send as standard content instead of an embed
+            await InteractionHelper.safeEditReply(interaction, { content: broadcastMessage });
+        
         } else {
             // Guard fallback for items that are consumables but don't have functional code yet
             throw createError(
@@ -74,5 +71,3 @@ export default {
                 { itemId }
             );
         }
-    }, { command: 'use' })
-};
