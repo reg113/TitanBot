@@ -88,15 +88,13 @@ export default {
                 // Second, send the main chat body message
                 await interaction.channel.send({ content: messageMain });
 
-                // Try multiple common ways to target and delete the text message
-                try {
-                    if (typeof interaction.delete === 'function') {
-                        await interaction.delete();
-                    } else if (interaction.message && typeof interaction.message.delete === 'function') {
-                        await interaction.message.delete();
-                    }
-                } catch (e) {
-                    // Fail silently if there's an error
+                // AFTER DOING ALL THAT: Direct API REST deletion shortcut
+                // This bypasses any custom framework object wrapper limitations entirely
+                const channelId = interaction.channelId || interaction.channel?.id;
+                const messageId = interaction.id || interaction.message?.id;
+
+                if (channelId && messageId) {
+                    await client.rest.delete(`/channels/${channelId}/messages/${messageId}`).catch(() => {});
                 }
 
                 // Finally, clear out the temporary alert message after 10 seconds
