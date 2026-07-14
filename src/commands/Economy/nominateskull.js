@@ -3,7 +3,7 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // --- VOTING SYSTEM CONFIGURATION ---
-const VOTE_CHANNEL_ID = '1515683394690879548'; // The channel where the vote prompt will drop
+const VOTE_CHANNEL_ID = '1526684676587261983'; // The channel where the vote prompt will drop
 const VOTER_ROLE_ID = '1515655155050086400';    // Only people with this role are allowed to vote
 const TARGET_ROLE_ID = '1515655155050086400';   // The role given to the user if the vote passes
 const REQUIRED_VOTES = 3;                        // The target amount of votes needed to pass
