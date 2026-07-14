@@ -81,7 +81,7 @@ export default {
 
             // Helper function to build the base description layout
             const makeDescription = (votersMarkdown = '*None yet*') => {
-                return `A vote has been opened to grant the <@&${TARGET_ROLE_ID}> role to ${targetUser.toString()}.\n\n` +
+                return `A vote has been opened to grant the <@&${TARGET_ROLE_ID}> role to ${targetUser.toString()} by ${user.toString()}.\n\n` +
                        `**Requirements:**\n` +
                        `• Requires **${REQUIRED_VOTES}** approval votes\n` +
                        `• Only members with the <@&${VOTER_ROLE_ID}> role can vote.\n\n` +
