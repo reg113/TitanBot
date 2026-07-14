@@ -4,9 +4,10 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // --- VOTING SYSTEM CONFIGURATION ---
 const VOTE_CHANNEL_ID = '1526684676587261983'; 
+const WELCOME_CHANNEL_ID = '1526684676587261983'; // If empty/invalid, defaults to the voting channel
 const VOTER_ROLE_ID = '1515655155050086400';    
 const TARGET_ROLE_ID = '1515655155050086400';   
-const REQUIRED_VOTES = 2;                        
+const REQUIRED_VOTES = 3;                        
 const VOTE_DURATION = 5 * 60 * 1000;             
 // -----------------------------------
 
@@ -25,6 +26,9 @@ export default {
         const isMessage = !interaction.options;
         const user = isMessage ? interaction.author : interaction.user;
         const guild = interaction.guild;
+        
+        // Capture the original channel where the command was triggered
+        const commandChannel = interaction.channel;
 
         // 1. Parse the target user IMMEDIATELY
         let targetUser;
@@ -159,30 +163,55 @@ export default {
                     ? Array.from(votedUserIds).map(id => `<@${id}>`).join(', ') 
                     : '*No one voted*';
 
-                if (reason === 'passed' || totalVoters >= REQUIRED_VOTES) {
+                const isSuccess = reason === 'passed' || totalVoters >= REQUIRED_VOTES;
+                let notificationContent = '';
+
+                if (isSuccess) {
                     await targetMember.roles.add(TARGET_ROLE_ID).catch(() => {});
 
                     embed.setTitle('✅ Nomination Approved!')
                          .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.\n\n**Final Voters:**\n${finalVotersMarkdown}`)
                          .setColor(0x2ecc71);
+
+                    // Message 1 Content (Success text)
+                    notificationContent = `🎉 **Nomination Passed!** ${targetUser.toString()}, the nomination started by ${user.toString()} has succeeded with **${totalVoters}/${REQUIRED_VOTES}** votes! You have been granted the <@&${TARGET_ROLE_ID}> role.`;
                 } else {
                     embed.setTitle('❌ Nomination Expired')
                          .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}\n\n**Voters:**\n${finalVotersMarkdown}`)
                          .setColor(0xe74c3c);
+
+                    // Message 1 Content (Failure text)
+                    notificationContent = `❌ **Nomination Failed.** ${targetUser.toString()}, the nomination started by ${user.toString()} did not get enough votes (**${totalVoters}/${REQUIRED_VOTES}**).`;
                 }
 
-                // Fetch fresh message state from Discord API to prevent locked cache overrides
+                // Fetch fresh message state from Discord API to remove active buttons from the voting card
                 const freshMessage = await voteChannel.messages.fetch(voteMessage.id).catch(() => null);
-                if (freshMessage) {
-                    await freshMessage.edit({ embeds: [embed], components: [] }).catch(() => {});
-                } else {
-                    await voteMessage.edit({ embeds: [embed], components: [] }).catch(() => {});
+                const finalMsgInstance = freshMessage || voteMessage;
+
+                if (finalMsgInstance) {
+                    await finalMsgInstance.edit({ embeds: [embed], components: [] }).catch(() => {});
+                }
+
+                // [MESSAGE 1]: Sent directly to the channel where the command was initiated
+                if (commandChannel) {
+                    await commandChannel.send({ content: notificationContent }).catch(() => {});
+                }
+
+                // [MESSAGE 2]: Welcome celebration sent to welcome or voting channel (Only if successful)
+                if (isSuccess) {
+                    const welcomeChannel = await guild.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
+                    // Falls back cleanly to the voting channel if your welcome channel setting is blank or missing
+                    const finalWelcomeDestination = welcomeChannel || voteChannel;
+
+                    if (finalWelcomeDestination) {
+                        const welcomeMessageContent = `✨ **Welcome to the club!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉🥂`;
+                        await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(() => {});
+                    }
                 }
             });
 
         } catch (error) {
             // Safe Error Handling: If a slash command has been deferred, safely edit the response 
-            // instead of throwing it to the global handler which will cause an "Interaction Failed" crash.
             if (!isMessage) {
                 await InteractionHelper.safeEditReply(interaction, {
                     content: `❌ **${error.name || 'Error'}:** ${error.message || 'An unexpected error occurred.'}`
