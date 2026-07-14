@@ -6,8 +6,8 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 const VOTE_CHANNEL_ID = '1515683394690879548'; 
 const VOTER_ROLE_ID = '1515678213265686528';    
 const TARGET_ROLE_ID = '1515678232140054579';   
-const REQUIRED_VOTES = 5;                        
-const VOTE_DURATION = 5 * 60 * 1000;             
+const REQUIRED_VOTES = 1;                        
+const VOTE_DURATION = 1 * 60 * 1000;             
 // -----------------------------------
 
 export default {
