@@ -3,11 +3,11 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // --- VOTING SYSTEM CONFIGURATION ---
-const VOTE_CHANNEL_ID = '1526684676587261983'; // The channel where the vote prompt will drop
-const VOTER_ROLE_ID = '1515655155050086400';    // Only people with this role are allowed to vote
-const TARGET_ROLE_ID = '1515655155050086400';   // The role given to the user if the vote passes
-const REQUIRED_VOTES = 3;                        // The target amount of votes needed to pass
-const VOTE_DURATION = 5 * 60 * 1000;             // How long the vote stays open (5 minutes)
+const VOTE_CHANNEL_ID = '1526684676587261983'; 
+const VOTER_ROLE_ID = '1515655155050086400';    
+const TARGET_ROLE_ID = '1515655155050086400';   
+const REQUIRED_VOTES = 2;                        
+const VOTE_DURATION = 5 * 60 * 1000;             
 // -----------------------------------
 
 export default {
@@ -22,16 +22,14 @@ export default {
         ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
-        // 1. Detect command source (Text message vs Slash command)
         const isMessage = !interaction.options;
         const user = isMessage ? interaction.author : interaction.user;
         const guild = interaction.guild;
 
+        // 1. Parse the target user IMMEDIATELY
         let targetUser;
         if (isMessage) {
-            // Extract the first user mentioned in the text message
             targetUser = interaction.mentions.users.first();
-            
             if (!targetUser) {
                 throw createError(
                     "Missing argument",
@@ -40,132 +38,158 @@ export default {
                 );
             }
         } else {
-            // Handle slash command deferral
-            const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: true });
-            if (!deferred) return;
             targetUser = interaction.options.getUser('target');
         }
 
-        // 2. Resolve the guild member target object
-        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-        if (!targetMember) {
-            throw createError(
-                "User not found",
-                ErrorTypes.VALIDATION,
-                "Could not find that user within this server."
-            );
+        // 2. If it's a slash command, defer instantly before doing ANY network/API fetches
+        if (!isMessage) {
+            const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: true });
+            if (!deferred) return;
         }
 
-        // 3. Make sure they don't already have the target role
-        if (targetMember.roles.cache.has(TARGET_ROLE_ID)) {
-            throw createError(
-                "Already Has Role",
-                ErrorTypes.VALIDATION,
-                `${targetUser.toString()} already possesses that role.`
-            );
-        }
+        // 3. Wrap all API fetches and checks in a protected block to prevent "Interaction Failed" errors
+        try {
+            const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+            if (!targetMember) {
+                throw createError(
+                    "User not found",
+                    ErrorTypes.VALIDATION,
+                    "Could not find that user within this server."
+                );
+            }
 
-        // 4. Fetch the designated channel where voting occurs
-        const voteChannel = await guild.channels.fetch(VOTE_CHANNEL_ID).catch(() => null);
-        if (!voteChannel) {
-            throw createError(
-                "Configuration Error",
-                ErrorTypes.SYSTEM,
-                "The designated voting channel could not be found. Check your VOTE_CHANNEL_ID."
-            );
-        }
+            if (targetMember.roles.cache.has(TARGET_ROLE_ID)) {
+                throw createError(
+                    "Already Has Role",
+                    ErrorTypes.VALIDATION,
+                    `${targetUser.toString()} already possesses that role.`
+                );
+            }
 
-        // 5. Build components and embeds for the vote
-        const voteButton = new ButtonBuilder()
-            .setCustomId('vote_approve')
-            .setLabel(`Vote Yes (0 / ${REQUIRED_VOTES})`)
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('💀');
+            const voteChannel = await guild.channels.fetch(VOTE_CHANNEL_ID).catch(() => null);
+            if (!voteChannel) {
+                throw createError(
+                    "Configuration Error",
+                    ErrorTypes.SYSTEM,
+                    "The designated voting channel could not be found. Check your VOTE_CHANNEL_ID."
+                );
+            }
 
-        const row = new ActionRowBuilder().addComponents(voteButton);
+            // Helper function to build the base description layout
+            const makeDescription = (votersMarkdown = '*None yet*') => {
+                return `A vote has been opened to grant the <@&${TARGET_ROLE_ID}> role to ${targetUser.toString()}.\n\n` +
+                       `**Requirements:**\n` +
+                       `• Requires **${REQUIRED_VOTES}** approval votes\n` +
+                       `• Only members with the <@&${VOTER_ROLE_ID}> role can vote.\n\n` +
+                       `**Current Voters:**\n${votersMarkdown}`;
+            };
 
-        const embed = new EmbedBuilder()
-            .setTitle('🗳️ Role Nomination Started!')
-            .setDescription(`A vote has been opened to grant the <@&${TARGET_ROLE_ID}> role to ${targetUser.toString()}.\n\n**Requirements:**\n• Requires **${REQUIRED_VOTES}** approval votes\n• Only members with the <@&${VOTER_ROLE_ID}> role can vote.`)
-            .setColor(0x3498db)
-            .setTimestamp()
-            .setFooter({ text: `Nominated by ${user.username}`, iconURL: user.displayAvatarURL() });
+            const voteButton = new ButtonBuilder()
+                .setCustomId('vote_approve')
+                .setLabel(`Vote Yes (0 / ${REQUIRED_VOTES})`)
+                .setStyle(ButtonStyle.Success)
+                .setEmoji('💀');
 
-        // Send the polling card to the specific channel
-        const voteMessage = await voteChannel.send({ embeds: [embed], components: [row] });
+            const row = new ActionRowBuilder().addComponents(voteButton);
 
-        // Respond to the execution source
-        if (isMessage) {
-            await interaction.delete().catch(() => {});
-        } else {
-            await InteractionHelper.safeEditReply(interaction, { 
-                content: `🗳️ Nomination successfully initialized in ${voteChannel.toString()}!` 
+            const embed = new EmbedBuilder()
+                .setTitle('🗳️ Role Nomination Started!')
+                .setDescription(makeDescription())
+                .setColor(0x3498db)
+                .setTimestamp()
+                .setFooter({ text: `Nominated by ${user.username}`, iconURL: user.displayAvatarURL() });
+
+            // Post the voting ticket to the target channel
+            const voteMessage = await voteChannel.send({ embeds: [embed], components: [row] });
+
+            // Clean up the command execution response
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { 
+                    content: `🗳️ Nomination successfully initialized in ${voteChannel.toString()}!` 
+                });
+            }
+
+            // 4. Set up the component collector for the buttons
+            const votedUserIds = new Set();
+            const collector = voteMessage.createMessageComponentCollector({
+                componentType: ComponentType.Button,
+                time: VOTE_DURATION
             });
+
+            collector.on('collect', async (btnInteraction) => {
+                const voterMember = btnInteraction.member;
+
+                if (!voterMember.roles.cache.has(VOTER_ROLE_ID)) {
+                    await btnInteraction.reply({ 
+                        content: `❌ Only users carrying the <@&${VOTER_ROLE_ID}> role are authorized to vote on this.`, 
+                        ephemeral: true 
+                    });
+                    return;
+                }
+
+                if (votedUserIds.has(voterMember.id)) {
+                    await btnInteraction.reply({ 
+                        content: `❌ You have already cast your vote for this nomination!`, 
+                        ephemeral: true 
+                    });
+                    return;
+                }
+
+                // Acknowledge the click immediately to prevent button lag/errors
+                await btnInteraction.deferUpdate().catch(() => {});
+
+                votedUserIds.add(voterMember.id);
+                const currentVoteCount = votedUserIds.size;
+                const votersMarkdown = Array.from(votedUserIds).map(id => `<@${id}>`).join(', ');
+
+                if (currentVoteCount >= REQUIRED_VOTES) {
+                    collector.stop('passed');
+                } else {
+                    voteButton.setLabel(`Vote Yes (${currentVoteCount} / ${REQUIRED_VOTES})`);
+                    embed.setDescription(makeDescription(votersMarkdown));
+                    await voteMessage.edit({ embeds: [embed], components: [row] }).catch(() => {});
+                }
+            });
+
+            collector.on('end', async (collected, reason) => {
+                const totalVoters = votedUserIds.size;
+                const finalVotersMarkdown = totalVoters > 0 
+                    ? Array.from(votedUserIds).map(id => `<@${id}>`).join(', ') 
+                    : '*No one voted*';
+
+                if (reason === 'passed' || totalVoters >= REQUIRED_VOTES) {
+                    await targetMember.roles.add(TARGET_ROLE_ID).catch(() => {});
+
+                    embed.setTitle('✅ Nomination Approved!')
+                         .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.\n\n**Final Voters:**\n${finalVotersMarkdown}`)
+                         .setColor(0x2ecc71);
+                } else {
+                    embed.setTitle('❌ Nomination Expired')
+                         .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}\n\n**Voters:**\n${finalVotersMarkdown}`)
+                         .setColor(0xe74c3c);
+                }
+
+                // Fetch fresh message state from Discord API to prevent locked cache overrides
+                const freshMessage = await voteChannel.messages.fetch(voteMessage.id).catch(() => null);
+                if (freshMessage) {
+                    await freshMessage.edit({ embeds: [embed], components: [] }).catch(() => {});
+                } else {
+                    await voteMessage.edit({ embeds: [embed], components: [] }).catch(() => {});
+                }
+            });
+
+        } catch (error) {
+            // Safe Error Handling: If a slash command has been deferred, safely edit the response 
+            // instead of throwing it to the global handler which will cause an "Interaction Failed" crash.
+            if (!isMessage) {
+                await InteractionHelper.safeEditReply(interaction, {
+                    content: `❌ **${error.name || 'Error'}:** ${error.message || 'An unexpected error occurred.'}`
+                });
+                return;
+            }
+            throw error;
         }
-
-        // 6. Monitor interactions on the button components
-        const votedUserIds = new Set();
-        const collector = voteMessage.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            time: VOTE_DURATION
-        });
-
-        collector.on('collect', async (btnInteraction) => {
-            const voterMember = btnInteraction.member;
-
-            // Enforce that the clicker has the mandatory voting role
-            if (!voterMember.roles.cache.has(VOTER_ROLE_ID)) {
-                await btnInteraction.reply({ 
-                    content: `❌ Only users carrying the <@&${VOTER_ROLE_ID}> role are authorized to vote on this.`, 
-                    ephemeral: true 
-                });
-                return;
-            }
-
-            // Block voters from multi-clicking the button
-            if (votedUserIds.has(voterMember.id)) {
-                await btnInteraction.reply({ 
-                    content: `❌ You have already cast your vote for this nomination!`, 
-                    ephemeral: true 
-                });
-                return;
-            }
-
-            // Save the vote state
-            votedUserIds.add(voterMember.id);
-            const currentVoteCount = votedUserIds.size;
-
-            if (currentVoteCount >= REQUIRED_VOTES) {
-                // Instantly declare a win condition and stop the collection timer
-                collector.stop('passed');
-                await btnInteraction.deferUpdate();
-            } else {
-                // Update button text labels in real-time with the current tally
-                voteButton.setLabel(`Vote Yes (${currentVoteCount} / ${REQUIRED_VOTES})`);
-                await btnInteraction.update({ components: [row] });
-            }
-        });
-
-        collector.on('end', async (collected, reason) => {
-            const totalVoters = votedUserIds.size;
-
-            if (reason === 'passed' || totalVoters >= REQUIRED_VOTES) {
-                // Success action: assign the role to the target user
-                await targetMember.roles.add(TARGET_ROLE_ID).catch(() => {});
-
-                embed.setTitle('✅ Nomination Approved!')
-                     .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.`)
-                     .setColor(0x2ecc71);
-            } else {
-                // Timeout action: dynamic color changing to visually close the prompt
-                embed.setTitle('❌ Nomination Expired')
-                     .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}`)
-                     .setColor(0xe74c3c);
-            }
-
-            // Strip the active buttons from the final message card layout
-            await voteMessage.edit({ embeds: [embed], components: [] }).catch(() => {});
-        });
-
     }, { command: 'nominate' })
 };
