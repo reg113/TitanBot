@@ -204,7 +204,7 @@ export default {
                     const finalWelcomeDestination = welcomeChannel || voteChannel;
 
                     if (finalWelcomeDestination) {
-                        const welcomeMessageContent = `✨ **Welcome to the club!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉🥂`;
+                        const welcomeMessageContent = `✨ **Welcome!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉`;
                         await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(() => {});
                     }
                 }
