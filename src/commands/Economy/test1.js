@@ -8,7 +8,7 @@ const WELCOME_CHANNEL_ID = '1515683394690879548'; // If empty/invalid, defaults 
 const VOTER_ROLE_ID = '1515678213265686528';    
 const TARGET_ROLE_ID = '1515678229065891933';   
 const REQUIRED_VOTES = 1;                        
-const VOTE_DURATION = 5 * 60 * 1000;             
+const VOTE_DURATION = 1 * 60 * 1000;             
 // -----------------------------------
 
 export default {
