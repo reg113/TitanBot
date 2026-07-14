@@ -5,8 +5,8 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 // --- VOTING SYSTEM CONFIGURATION ---
 const VOTE_CHANNEL_ID = '1515683394690879548'; 
 const VOTER_ROLE_ID = '1515678213265686528';    
-const TARGET_ROLE_ID = '1526695350398615656';   
-const REQUIRED_VOTES = 5;                        
+const TARGET_ROLE_ID = '1515678229065891933';   
+const REQUIRED_VOTES = 1;                        
 const VOTE_DURATION = 5 * 60 * 1000;             
 // -----------------------------------
 
