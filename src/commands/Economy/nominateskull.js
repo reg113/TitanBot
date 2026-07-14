@@ -27,8 +27,8 @@ export default {
         const user = isMessage ? interaction.author : interaction.user;
         const guild = interaction.guild;
         
-        // Capture the original channel where the command was triggered
-        const commandChannel = interaction.channel;
+        // Capture the raw channel ID immediately to prevent stale channel cache loops
+        const commandChannelId = interaction.channelId;
 
         // 1. Parse the target user IMMEDIATELY
         let targetUser;
@@ -125,6 +125,7 @@ export default {
             collector.on('collect', async (btnInteraction) => {
                 const voterMember = btnInteraction.member;
 
+                // Role check validation
                 if (!voterMember.roles.cache.has(VOTER_ROLE_ID)) {
                     await btnInteraction.reply({ 
                         content: `❌ Only users carrying the <@&${VOTER_ROLE_ID}> role are authorized to vote on this.`, 
@@ -133,80 +134,100 @@ export default {
                     return;
                 }
 
-                if (votedUserIds.has(voterMember.id)) {
-                    await btnInteraction.reply({ 
-                        content: `❌ You have already cast your vote for this nomination!`, 
-                        ephemeral: true 
-                    });
-                    return;
-                }
-
                 // Acknowledge the click immediately to prevent button lag/errors
                 await btnInteraction.deferUpdate().catch(() => {});
 
-                votedUserIds.add(voterMember.id);
-                const currentVoteCount = votedUserIds.size;
-                const votersMarkdown = Array.from(votedUserIds).map(id => `<@${id}>`).join(', ');
+                // TOGGLE LOGIC: If they already voted, delete them. Otherwise, add them.
+                if (votedUserIds.has(voterMember.id)) {
+                    votedUserIds.delete(voterMember.id);
+                } else {
+                    votedUserIds.add(voterMember.id);
+                }
 
+                const currentVoteCount = votedUserIds.size;
+                
+                // Construct the markdown list of voters dynamically
+                const votersMarkdown = currentVoteCount > 0 
+                    ? Array.from(votedUserIds).map(id => `<@${id}>`).join(', ') 
+                    : '*None yet*';
+
+                // Check if threshold is met
                 if (currentVoteCount >= REQUIRED_VOTES) {
                     collector.stop('passed');
                 } else {
+                    // Update layout seamlessly to match current vote count shifts
                     voteButton.setLabel(`Vote Yes (${currentVoteCount} / ${REQUIRED_VOTES})`);
                     embed.setDescription(makeDescription(votersMarkdown));
                     await voteMessage.edit({ embeds: [embed], components: [row] }).catch(() => {});
                 }
             });
 
+            // 5. End Lifecycle Execution
             collector.on('end', async (collected, reason) => {
-                const totalVoters = votedUserIds.size;
-                const finalVotersMarkdown = totalVoters > 0 
-                    ? Array.from(votedUserIds).map(id => `<@${id}>`).join(', ') 
-                    : '*No one voted*';
+                try {
+                    const totalVoters = votedUserIds.size;
+                    const finalVotersMarkdown = totalVoters > 0 
+                        ? Array.from(votedUserIds).map(id => `<@${id}>`).join(', ') 
+                        : '*No one voted*';
 
-                const isSuccess = reason === 'passed' || totalVoters >= REQUIRED_VOTES;
-                let notificationContent = '';
+                    const isSuccess = reason === 'passed' || totalVoters >= REQUIRED_VOTES;
+                    let notificationContent = '';
 
-                if (isSuccess) {
-                    await targetMember.roles.add(TARGET_ROLE_ID).catch(() => {});
+                    const freshVoteChannel = await guild.channels.fetch(VOTE_CHANNEL_ID).catch(() => null);
+                    const freshCommandChannel = await guild.channels.fetch(commandChannelId).catch(() => null);
 
-                    embed.setTitle('✅ Nomination Approved!')
-                         .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.\n\n**Final Voters:**\n${finalVotersMarkdown}`)
-                         .setColor(0x2ecc71);
+                    if (isSuccess) {
+                        const freshTargetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+                        if (freshTargetMember) {
+                            await freshTargetMember.roles.add(TARGET_ROLE_ID).catch(err => {
+                                console.error('[Nominate Role Error] Bot lacks permissions or role hierarchy issue:', err);
+                            });
+                        }
 
-                    // Message 1 Content (Success text)
-                    notificationContent = `🎉 **Nomination Passed!** ${targetUser.toString()}, the nomination started by ${user.toString()} has succeeded with **${totalVoters}/${REQUIRED_VOTES}** votes! You have been granted the <@&${TARGET_ROLE_ID}> role.`;
-                } else {
-                    embed.setTitle('❌ Nomination Expired')
-                         .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}\n\n**Voters:**\n${finalVotersMarkdown}`)
-                         .setColor(0xe74c3c);
+                        embed.setTitle('✅ Nomination Approved!')
+                             .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.\n\n**Final Voters:**\n${finalVotersMarkdown}`)
+                             .setColor(0x2ecc71);
 
-                    // Message 1 Content (Failure text)
-                    notificationContent = `❌ **Nomination Failed.** ${targetUser.toString()}, the nomination started by ${user.toString()} did not get enough votes (**${totalVoters}/${REQUIRED_VOTES}**).`;
-                }
+                        notificationContent = `🎉 **Nomination Passed!** ${targetUser.toString()}, the nomination started by ${user.toString()} has succeeded with **${totalVoters}/${REQUIRED_VOTES}** votes! You have been granted the <@&${TARGET_ROLE_ID}> role.`;
+                    } else {
+                        embed.setTitle('❌ Nomination Expired')
+                             .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}\n\n**Voters:**\n${finalVotersMarkdown}`)
+                             .setColor(0xe74c3c);
 
-                // Fetch fresh message state from Discord API to remove active buttons from the voting card
-                const freshMessage = await voteChannel.messages.fetch(voteMessage.id).catch(() => null);
-                const finalMsgInstance = freshMessage || voteMessage;
-
-                if (finalMsgInstance) {
-                    await finalMsgInstance.edit({ embeds: [embed], components: [] }).catch(() => {});
-                }
-
-                // [MESSAGE 1]: Sent directly to the channel where the command was initiated
-                if (commandChannel) {
-                    await commandChannel.send({ content: notificationContent }).catch(() => {});
-                }
-
-                // [MESSAGE 2]: Welcome celebration sent to welcome or voting channel (Only if successful)
-                if (isSuccess) {
-                    const welcomeChannel = await guild.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
-                    // Falls back cleanly to the voting channel if your welcome channel setting is blank or missing
-                    const finalWelcomeDestination = welcomeChannel || voteChannel;
-
-                    if (finalWelcomeDestination) {
-                        const welcomeMessageContent = `✨ **Welcome!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉`;
-                        await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(() => {});
+                        notificationContent = `❌ **Nomination Failed.** ${targetUser.toString()}, the nomination started by ${user.toString()} did not get enough votes (**${totalVoters}/${REQUIRED_VOTES}**).`;
                     }
+
+                    // 1. Remove active button control interface entirely from the original post
+                    if (freshVoteChannel) {
+                        const freshMessage = await freshVoteChannel.messages.fetch(voteMessage.id).catch(() => null);
+                        if (freshMessage) {
+                            await freshMessage.edit({ embeds: [embed], components: [] }).catch(err => {
+                                console.error('[Nominate Layout Error] Failed editing voting card:', err);
+                            });
+                        }
+                    }
+
+                    // 2. Send Message 1 into the original execution channel tracking data parameters
+                    if (freshCommandChannel) {
+                        await freshCommandChannel.send({ content: notificationContent }).catch(err => {
+                            console.error('[Nominate Route Error] Bot lacks Send Messages permission in command channel:', err);
+                        });
+                    }
+
+                    // 3. Send Message 2 (Celebration) to Welcome/Voting Channel
+                    if (isSuccess) {
+                        const welcomeChannel = await guild.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
+                        const finalWelcomeDestination = welcomeChannel || freshVoteChannel;
+
+                        if (finalWelcomeDestination) {
+                            const welcomeMessageContent = `**Welcome!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉`;
+                            await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(err => {
+                                console.error('[Nominate Welcome Error] Bot failed sending welcome announcement:', err);
+                            });
+                        }
+                    }
+                } catch (internalEventError) {
+                    console.error('[Nominate End Lifecycle Critical Crash]:', internalEventError);
                 }
             });
 
