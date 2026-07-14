@@ -4,6 +4,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 // --- VOTING SYSTEM CONFIGURATION ---
 const VOTE_CHANNEL_ID = '1515683394690879548'; 
+const WELCOME_CHANNEL_ID = '1515683394690879548'; // If empty/invalid, defaults to the voting channel
 const VOTER_ROLE_ID = '1515678213265686528';    
 const TARGET_ROLE_ID = '1515678229065891933';   
 const REQUIRED_VOTES = 1;                        
@@ -25,6 +26,9 @@ export default {
         const isMessage = !interaction.options;
         const user = isMessage ? interaction.author : interaction.user;
         const guild = interaction.guild;
+        
+        // Capture the original channel where the command was triggered
+        const commandChannel = interaction.channel;
 
         // 1. Parse the target user IMMEDIATELY
         let targetUser;
@@ -169,27 +173,40 @@ export default {
                          .setDescription(`🎉 The vote succeeded with **${totalVoters}** approvals!\n\n${targetUser.toString()} has officially been awarded the <@&${TARGET_ROLE_ID}> role.\n\n**Final Voters:**\n${finalVotersMarkdown}`)
                          .setColor(0x2ecc71);
 
-                    // Mention string for a successful vote outcome
+                    // Message 1 Content (Success text)
                     notificationContent = `🎉 **Nomination Passed!** ${targetUser.toString()}, the nomination started by ${user.toString()} has succeeded with **${totalVoters}/${REQUIRED_VOTES}** votes! You have been granted the <@&${TARGET_ROLE_ID}> role.`;
                 } else {
                     embed.setTitle('❌ Nomination Expired')
                          .setDescription(`The voting timeframe concluded. Not enough votes were acquired to grant ${targetUser.toString()} the role.\n\n**Final Count:** ${totalVoters} / ${REQUIRED_VOTES}\n\n**Voters:**\n${finalVotersMarkdown}`)
                          .setColor(0xe74c3c);
 
-                    // Mention string for a failed/expired vote outcome
+                    // Message 1 Content (Failure text)
                     notificationContent = `❌ **Nomination Failed.** ${targetUser.toString()}, the nomination started by ${user.toString()} did not get enough votes (**${totalVoters}/${REQUIRED_VOTES}**).`;
                 }
 
-                // Fetch fresh message state from Discord API to prevent locked cache overrides
+                // Fetch fresh message state from Discord API to remove active buttons from the voting card
                 const freshMessage = await voteChannel.messages.fetch(voteMessage.id).catch(() => null);
                 const finalMsgInstance = freshMessage || voteMessage;
 
                 if (finalMsgInstance) {
-                    // Update the voting embed to remove active buttons
                     await finalMsgInstance.edit({ embeds: [embed], components: [] }).catch(() => {});
-                    
-                    // Reply to the finalized card, mentioning both users
-                    await finalMsgInstance.reply({ content: notificationContent }).catch(() => {});
+                }
+
+                // [MESSAGE 1]: Sent directly to the channel where the command was initiated
+                if (commandChannel) {
+                    await commandChannel.send({ content: notificationContent }).catch(() => {});
+                }
+
+                // [MESSAGE 2]: Welcome celebration sent to welcome or voting channel (Only if successful)
+                if (isSuccess) {
+                    const welcomeChannel = await guild.channels.fetch(WELCOME_CHANNEL_ID).catch(() => null);
+                    // Falls back cleanly to the voting channel if your welcome channel setting is blank or missing
+                    const finalWelcomeDestination = welcomeChannel || voteChannel;
+
+                    if (finalWelcomeDestination) {
+                        const welcomeMessageContent = `✨ **Welcome to the club!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉🥂`;
+                        await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(() => {});
+                    }
                 }
             });
 
