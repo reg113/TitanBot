@@ -3,7 +3,8 @@ import {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    ComponentType 
+    ComponentType,
+    MessageFlags 
 } from 'discord.js';
 import { createEmbed } from '../../utils/embeds.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
@@ -38,15 +39,17 @@ export default {
             );
         }
 
-        // 1. Gather and format data for both structures
+        // 1. Gather and format data utilizing the exact layout type checks from your balance command
         const allUserData = [];
         for (const key of allKeys) {
             const userId = key.replace(prefix, "");
             const userData = await client.db.get(key);
 
             if (userData) {
-                const wallet = userData.wallet || 0;
-                const bank = userData.bank || 0;
+                // Safeguards copied directly from balance tracking parameters
+                const wallet = typeof userData.wallet === 'number' ? userData.wallet : 0;
+                const bank = typeof userData.bank === 'number' ? userData.bank : 0;
+                
                 allUserData.push({
                     userId: userId,
                     wallet: wallet,
@@ -63,19 +66,21 @@ export default {
             );
         }
 
-        // Create pre-sorted copies for each leaderboard variant
+        // Pre-sort data pools for lightning-fast button switches
         const cashSorted = [...allUserData].sort((a, b) => b.wallet - a.wallet);
         const totalSorted = [...allUserData].sort((a, b) => b.total - a.total);
 
         const rankEmoji = ["🥇", "🥈", "🥉"];
 
-        // 2. Dynamic generation helper to build pages
+        // 2. Page Generation Matrix Helper
         const generateLeaderboardPage = (pageType) => {
             const sortedList = pageType === 'cash' ? cashSorted : totalSorted;
             const topUsers = sortedList.slice(0, 10);
             
-            // Find execution user's relative placement
-            const userRank = sortedList.findIndex((u) => u.userId === interaction.user.id) + 1;
+            // Calculate running execution user's relative position
+            const rawRank = sortedList.findIndex((u) => u.userId === interaction.user.id);
+            const userRank = rawRank !== -1 ? rawRank + 1 : 0;
+            
             const leaderboardEntries = [];
 
             for (let i = 0; i < topUsers.length; i++) {
@@ -87,7 +92,7 @@ export default {
                 const formatIcon = pageType === 'cash' ? '💵' : '🏦';
 
                 leaderboardEntries.push(
-                    `${emoji} <@${user.userId}> - ${formatIcon} ${value.toLocaleString()}`
+                    `${emoji} <@${user.userId}> - ${formatIcon} $${value.toLocaleString()}`
                 );
             }
 
@@ -101,10 +106,10 @@ export default {
                 footer: `Your Rank: ${userRank > 0 ? `#${userRank}` : "No ranking data available"}`,
             });
 
-            // Page navigation controls
+            // Interactive Buttons
             const cashButton = new ButtonBuilder()
                 .setCustomId('leaderboard_cash')
-                .setLabel('Cash (Wallet)')
+                .setLabel('Cash Only')
                 .setEmoji('💵')
                 .setStyle(pageType === 'cash' ? ButtonStyle.Primary : ButtonStyle.Secondary)
                 .setDisabled(pageType === 'cash');
@@ -121,30 +126,29 @@ export default {
             return { embeds: [embed], components: [row] };
         };
 
-        // 3. Render initial layout page (Cash)
+        // 3. Render initial base layout (Defaults to Cash Only)
         let currentPage = 'cash';
         const initialPayload = generateLeaderboardPage(currentPage);
         
-        const replyMessage = await InteractionHelper.safeEditReply(interaction, initialPayload);
-        if (!replyMessage) return;
+        await InteractionHelper.safeEditReply(interaction, initialPayload);
 
         logger.info(`[ECONOMY] Interactive Leaderboard initialized`, { 
             guildId, 
             userCount: allUserData.length 
         });
 
-        // 4. Setup interaction collector for buttons
-        const collector = replyMessage.createMessageComponentCollector({
+        // 4. Setup Component Collector directly bound to the slash command interaction context
+        const collector = interaction.createMessageComponentCollector({
             componentType: ComponentType.Button,
-            time: 60000 // Inactive timeout of 60 seconds
+            time: 60000 // Interface expires after 60 seconds of inactivity
         });
 
         collector.on('collect', async (btnInteraction) => {
-            // Only allow the original runner of the slash command to interact
+            // Guard clause: Only allow the command runner to toggle values
             if (btnInteraction.user.id !== interaction.user.id) {
                 await btnInteraction.reply({
                     content: "❌ Run `/eleaderboard` yourself to look through this server's statistics!",
-                    ephemeral: true
+                    flags: [MessageFlags.Ephemeral] // 👈 Fixed deprecation warning cleanly here
                 });
                 return;
             }
@@ -156,9 +160,9 @@ export default {
         });
 
         collector.on('end', async () => {
-            // Clean up: Disable or completely remove navigation components when inactive
+            // Cleanup: Drop UI components instantly upon lifecycle expiration
             const disabledPayload = generateLeaderboardPage(currentPage);
-            disabledPayload.components = []; // Strip buttons away completely
+            disabledPayload.components = []; 
 
             await InteractionHelper.safeEditReply(interaction, disabledPayload).catch(() => {});
         });
