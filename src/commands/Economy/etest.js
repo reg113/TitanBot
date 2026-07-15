@@ -137,8 +137,9 @@ export default {
             userCount: allUserData.length 
         });
 
-        // 4. Setup Component Collector directly bound to the slash command interaction context
-        const collector = interaction.createMessageComponentCollector({
+        // 4. Setup Component Collector by explicitly fetching the message reply first
+        const replyMessage = await interaction.fetchReply(); // 👈 Fetches the true Message object safely
+        const collector = replyMessage.createMessageComponentCollector({ // 👈 Binds collector safely to the Message
             componentType: ComponentType.Button,
             time: 60000 // Interface expires after 60 seconds of inactivity
         });
@@ -148,7 +149,7 @@ export default {
             if (btnInteraction.user.id !== interaction.user.id) {
                 await btnInteraction.reply({
                     content: "❌ Run `/eleaderboard` yourself to look through this server's statistics!",
-                    flags: [MessageFlags.Ephemeral] // 👈 Fixed deprecation warning cleanly here
+                    flags: [MessageFlags.Ephemeral]
                 });
                 return;
             }
