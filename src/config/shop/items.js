@@ -121,6 +121,17 @@ roleId: null,
         }
     },
     {
+    id: 'lockpick',
+    name: '🕵️‍♂️ Lockpick',
+    price: 25000,
+    description: 'Allows you to attempt a heist on a locked vault. Gives a 35% chance to bypass a Vault Lock. Consumed on attempt.',
+    type: 'consumable',
+    maxQuantity: 2, // Strict inventory limit: can only hold 2 at a time
+    effect: {
+        type: 'lockpick_bypass'
+    }
+},
+    {
         id: 'personal_safe',
         name: '🔒 Personal Safe',
         price: 30000,
