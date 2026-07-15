@@ -104,6 +104,68 @@ export default {
         }
 
         // 5. Item execution logic
+        // Find your item execution logic block (Step 5) and update it like this:
+
+        // 5. Item execution logic
+        if (itemId === 'skull') {
+            // Deduct 1 item from inventory
+            userData.inventory[itemId] = currentQuantity - 1;
+            await setEconomyData(client, guildId, userId, userData);
+
+            // Apply the cooldown timestamp now that usage is verified and successful
+            if (!hasBypass) {
+                cooldowns.set(userId, Date.now() + COOLDOWN_DURATION);
+            }
+
+            const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
+            const messageMain = `<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
+
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+                const temporaryMessage = await interaction.channel.send({ content: messageAlert });
+                const mainMessage = await interaction.channel.send({ content: messageMain });
+                await mainMessage.react('💀').catch(() => {});
+                setTimeout(() => { temporaryMessage.delete().catch(() => {}); }, 5000);
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { content: messageAlert });
+                const mainMessage = await interaction.channel.send({ content: messageMain });
+                await mainMessage.react('💀').catch(() => {});
+                setTimeout(() => { interaction.deleteReply().catch(() => {}); }, 10000);
+            }
+
+        } else if (itemId === 'vault_lock') {
+            // Check if they already have an active lock deployed
+            if (userData.vaultProtected === true) {
+                throw createError(
+                    "Already Protected",
+                    ErrorTypes.VALIDATION,
+                    "Your bank vault is already armed with an active Vault Lock! Save this one for when that one breaks."
+                );
+            }
+
+            // Deduct 1 item from inventory & activate the state flag
+            userData.inventory[itemId] = currentQuantity - 1;
+            userData.vaultProtected = true; 
+            await setEconomyData(client, guildId, userId, userData);
+
+            const activationMessage = `🔒 **Vault Lock Fully Activated!** Your bank account is now heavily fortified. The lock will remain active until it successfully absorbs and breaks a `/bankrob` attempt.`;
+
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+                await interaction.channel.send({ content: activationMessage });
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { content: activationMessage });
+            }
+
+        } else {
+            // Guard fallback for items that are consumables but don't have functional code yet
+            throw createError(
+                "Item not functional",
+                ErrorTypes.VALIDATION,
+                `The item **${item.name}** is a consumable but does not have a functional use routine set up yet.`,
+                { itemId }
+            );
+        }
         if (itemId === 'skull') {
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
