@@ -132,6 +132,17 @@ roleId: null,
     }
 },
     {
+    id: 'fake_id',
+    name: '🪪 Fake ID',
+    price: 15000,
+    description: 'Bypasses the system logs! Instantly clears your `/bankrob` cooldown so you can jump right back into action.',
+    type: 'consumable',
+    maxQuantity: 2, // Limits how many they can hoard at once
+    effect: {
+        type: 'clear_cooldown'
+    }
+},
+    {
         id: 'personal_safe',
         name: '🔒 Personal Safe',
         price: 30000,
