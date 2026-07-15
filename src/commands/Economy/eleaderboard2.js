@@ -6,7 +6,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 export default {
     data: new SlashCommandBuilder()
-        .setName("eleaderboard")
+        .setName("eleaderboard2")
         .setDescription("View the server's top 10 richest users.")
         .setDMPermission(false),
 
@@ -84,5 +84,5 @@ export default {
             });
 
             await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-    }, { command: 'eleaderboard' })
+    }, { command: 'eleaderboard2' })
 };
