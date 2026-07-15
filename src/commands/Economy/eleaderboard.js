@@ -53,6 +53,7 @@ export default {
                 allUserData.push({
                     userId: userId,
                     wallet: wallet,
+                    bank: bank, // Saved explicitly to allow standalone bank sorting
                     total: wallet + bank,
                 });
             }
@@ -68,13 +69,32 @@ export default {
 
         // Pre-sort data pools for lightning-fast button switches
         const cashSorted = [...allUserData].sort((a, b) => b.wallet - a.wallet);
+        const bankSorted = [...allUserData].sort((a, b) => b.bank - a.bank);
         const totalSorted = [...allUserData].sort((a, b) => b.total - a.total);
 
         const rankEmoji = ["🥇", "🥈", "🥉"];
 
         // 2. Page Generation Matrix Helper
         const generateLeaderboardPage = (pageType) => {
-            const sortedList = pageType === 'cash' ? cashSorted : totalSorted;
+            let sortedList;
+            let title;
+            let formatIcon;
+
+            // Resolve layout parameters depending on active page selection
+            if (pageType === 'cash') {
+                sortedList = cashSorted;
+                title = `💵 Cash Leaderboard`;
+                formatIcon = '💵';
+            } else if (pageType === 'bank') {
+                sortedList = bankSorted;
+                title = `💳 Bank Leaderboard`;
+                formatIcon = '💳';
+            } else {
+                sortedList = totalSorted;
+                title = `💰 Total Wealth Leaderboard`;
+                formatIcon = '💰';
+            }
+
             const topUsers = sortedList.slice(0, 10);
             
             // Calculate running execution user's relative position
@@ -88,8 +108,10 @@ export default {
                 const rank = i + 1;
                 const emoji = rankEmoji[i] || `**#${rank}**`;
                 
-                const value = pageType === 'cash' ? user.wallet : user.total;
-                const formatIcon = pageType === 'cash' ? '💵' : '🏦';
+                let value;
+                if (pageType === 'cash') value = user.wallet;
+                else if (pageType === 'bank') value = user.bank;
+                else value = user.total;
 
                 leaderboardEntries.push(
                     `${emoji} <@${user.userId}> - ${formatIcon} $${value.toLocaleString()}`
@@ -101,12 +123,12 @@ export default {
                 : "No economy data is available for this server yet.";
 
             const embed = createEmbed({
-                title: pageType === 'cash' ? `💵 Cash Leaderboard` : `🏦 Total Wealth Leaderboard`,
+                title,
                 description,
                 footer: `Your Rank: ${userRank > 0 ? `#${userRank}` : "No ranking data available"}`,
             });
 
-            // Interactive Buttons
+            // Interactive Buttons Setup
             const cashButton = new ButtonBuilder()
                 .setCustomId('leaderboard_cash')
                 .setLabel('Cash Only')
@@ -114,14 +136,21 @@ export default {
                 .setStyle(pageType === 'cash' ? ButtonStyle.Primary : ButtonStyle.Secondary)
                 .setDisabled(pageType === 'cash');
 
+            const bankButton = new ButtonBuilder()
+                .setCustomId('leaderboard_bank')
+                .setLabel('Bank Only')
+                .setEmoji('💳')
+                .setStyle(pageType === 'bank' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setDisabled(pageType === 'bank');
+
             const totalButton = new ButtonBuilder()
                 .setCustomId('leaderboard_total')
                 .setLabel('Total Wealth')
-                .setEmoji('🏦')
+                .setEmoji('💰')
                 .setStyle(pageType === 'total' ? ButtonStyle.Primary : ButtonStyle.Secondary)
                 .setDisabled(pageType === 'total');
 
-            const row = new ActionRowBuilder().addComponents(cashButton, totalButton);
+            const row = new ActionRowBuilder().addComponents(cashButton, bankButton, totalButton);
 
             return { embeds: [embed], components: [row] };
         };
@@ -138,8 +167,8 @@ export default {
         });
 
         // 4. Setup Component Collector by explicitly fetching the message reply first
-        const replyMessage = await interaction.fetchReply(); // 👈 Fetches the true Message object safely
-        const collector = replyMessage.createMessageComponentCollector({ // 👈 Binds collector safely to the Message
+        const replyMessage = await interaction.fetchReply(); 
+        const collector = replyMessage.createMessageComponentCollector({ 
             componentType: ComponentType.Button,
             time: 60000 // Interface expires after 60 seconds of inactivity
         });
@@ -154,9 +183,16 @@ export default {
                 return;
             }
 
-            currentPage = btnInteraction.customId === 'leaderboard_cash' ? 'cash' : 'total';
+            // Map button Custom IDs directly to our internal page types
+            if (btnInteraction.customId === 'leaderboard_cash') {
+                currentPage = 'cash';
+            } else if (btnInteraction.customId === 'leaderboard_bank') {
+                currentPage = 'bank';
+            } else {
+                currentPage = 'total';
+            }
+
             const updatedPayload = generateLeaderboardPage(currentPage);
-            
             await btnInteraction.update(updatedPayload).catch(() => {});
         });
 
