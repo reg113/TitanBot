@@ -108,6 +108,18 @@ roleId: null,
             increase: 10000
         }
     },
+    // New defensive item specifically for protecting Bank assets from Heists
+    {
+        id: 'vault_lock',
+        name: '🔒 Vault Lock',
+        price: 45000,
+        description: 'Secures your bank vaults! Must be activated using `/use vault_lock`. Breaks after blocking one heist attempt.',
+        type: 'consumable',
+        maxQuantity: 3, // Allows them to hoard up to 3 spares in inventory
+        effect: {
+            type: 'bankrob_protection',
+        }
+    },
     {
         id: 'personal_safe',
         name: '🔒 Personal Safe',
