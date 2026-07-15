@@ -5,6 +5,7 @@ export const shopItems = [
     price: 1500,
     description: 'Set off a massive Ahlul Skull ping in the current channel! Consumed upon use.',
     type: 'consumable',
+    cooldown: 10* 60 * 1000, // 10 minutes in milliseconds
     maxQuantity: 10,
     effect: {
         type: 'channel_broadcast'
