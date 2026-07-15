@@ -116,6 +116,7 @@ roleId: null,
         price: 45000,
         description: 'Secures your bank vaults! Must be activated using `/use vault_lock`. Breaks after blocking one heist attempt.',
         type: 'consumable',
+        cooldown: 60 * 60 * 1000, // 1 hour in milliseconds
         maxQuantity: 3, // Allows them to hoard up to 3 spares in inventory
         effect: {
             type: 'bankrob_protection',
@@ -127,6 +128,7 @@ roleId: null,
     price: 25000,
     description: 'Allows you to attempt a heist on a locked vault. Gives a 35% chance to bypass a Vault Lock. Consumed on attempt.',
     type: 'consumable',
+    cooldown: 0, //o or omitted means absolutely no cooldown
     maxQuantity: 2, // Strict inventory limit: can only hold 2 at a time
     effect: {
         type: 'lockpick_bypass'
@@ -138,6 +140,7 @@ roleId: null,
     price: 15000,
     description: 'Bypasses the system logs! Instantly clears your `/bankrob` cooldown so you can jump right back into action.',
     type: 'consumable',
+    cooldown: 0,
     maxQuantity: 2, // Limits how many they can hoard at once
     effect: {
         type: 'clear_cooldown'
