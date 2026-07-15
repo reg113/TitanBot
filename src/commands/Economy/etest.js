@@ -1,0 +1,167 @@
+import { 
+    SlashCommandBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ComponentType 
+} from 'discord.js';
+import { createEmbed } from '../../utils/embeds.js';
+import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
+import { logger } from '../../utils/logger.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
+
+export default {
+    data: new SlashCommandBuilder()
+        .setName("etest")
+        .setDescription("View the server's top 10 richest users.")
+        .setDMPermission(false),
+
+    execute: withErrorHandling(async (interaction, config, client) => {
+        const deferred = await InteractionHelper.safeDefer(interaction);
+        if (!deferred) return;
+
+        const guildId = interaction.guildId;
+        logger.debug(`[ECONOMY] Leaderboard requested`, { guildId });
+
+        const prefix = `economy:${guildId}:`;
+        let allKeys = await client.db.list(prefix);
+
+        if (!Array.isArray(allKeys)) {
+            allKeys = [];
+        }
+
+        if (allKeys.length === 0) {
+            throw createError(
+                "No economy data found",
+                ErrorTypes.VALIDATION,
+                "No economy data found for this server."
+            );
+        }
+
+        // 1. Gather and format data for both structures
+        const allUserData = [];
+        for (const key of allKeys) {
+            const userId = key.replace(prefix, "");
+            const userData = await client.db.get(key);
+
+            if (userData) {
+                const wallet = userData.wallet || 0;
+                const bank = userData.bank || 0;
+                allUserData.push({
+                    userId: userId,
+                    wallet: wallet,
+                    total: wallet + bank,
+                });
+            }
+        }
+
+        if (allUserData.length === 0) {
+            throw createError(
+                "No economy data found",
+                ErrorTypes.VALIDATION,
+                "No economy data found for this server."
+            );
+        }
+
+        // Create pre-sorted copies for each leaderboard variant
+        const cashSorted = [...allUserData].sort((a, b) => b.wallet - a.wallet);
+        const totalSorted = [...allUserData].sort((a, b) => b.total - a.total);
+
+        const rankEmoji = ["🥇", "🥈", "🥉"];
+
+        // 2. Dynamic generation helper to build pages
+        const generateLeaderboardPage = (pageType) => {
+            const sortedList = pageType === 'cash' ? cashSorted : totalSorted;
+            const topUsers = sortedList.slice(0, 10);
+            
+            // Find execution user's relative placement
+            const userRank = sortedList.findIndex((u) => u.userId === interaction.user.id) + 1;
+            const leaderboardEntries = [];
+
+            for (let i = 0; i < topUsers.length; i++) {
+                const user = topUsers[i];
+                const rank = i + 1;
+                const emoji = rankEmoji[i] || `**#${rank}**`;
+                
+                const value = pageType === 'cash' ? user.wallet : user.total;
+                const formatIcon = pageType === 'cash' ? '💵' : '🏦';
+
+                leaderboardEntries.push(
+                    `${emoji} <@${user.userId}> - ${formatIcon} ${value.toLocaleString()}`
+                );
+            }
+
+            const description = leaderboardEntries.length > 0
+                ? leaderboardEntries.join("\n")
+                : "No economy data is available for this server yet.";
+
+            const embed = createEmbed({
+                title: pageType === 'cash' ? `💵 Cash Leaderboard` : `🏦 Total Wealth Leaderboard`,
+                description,
+                footer: `Your Rank: ${userRank > 0 ? `#${userRank}` : "No ranking data available"}`,
+            });
+
+            // Page navigation controls
+            const cashButton = new ButtonBuilder()
+                .setCustomId('leaderboard_cash')
+                .setLabel('Cash (Wallet)')
+                .setEmoji('💵')
+                .setStyle(pageType === 'cash' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setDisabled(pageType === 'cash');
+
+            const totalButton = new ButtonBuilder()
+                .setCustomId('leaderboard_total')
+                .setLabel('Total Wealth')
+                .setEmoji('🏦')
+                .setStyle(pageType === 'total' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+                .setDisabled(pageType === 'total');
+
+            const row = new ActionRowBuilder().addComponents(cashButton, totalButton);
+
+            return { embeds: [embed], components: [row] };
+        };
+
+        // 3. Render initial layout page (Cash)
+        let currentPage = 'cash';
+        const initialPayload = generateLeaderboardPage(currentPage);
+        
+        const replyMessage = await InteractionHelper.safeEditReply(interaction, initialPayload);
+        if (!replyMessage) return;
+
+        logger.info(`[ECONOMY] Interactive Leaderboard initialized`, { 
+            guildId, 
+            userCount: allUserData.length 
+        });
+
+        // 4. Setup interaction collector for buttons
+        const collector = replyMessage.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            time: 60000 // Inactive timeout of 60 seconds
+        });
+
+        collector.on('collect', async (btnInteraction) => {
+            // Only allow the original runner of the slash command to interact
+            if (btnInteraction.user.id !== interaction.user.id) {
+                await btnInteraction.reply({
+                    content: "❌ Run `/eleaderboard` yourself to look through this server's statistics!",
+                    ephemeral: true
+                });
+                return;
+            }
+
+            currentPage = btnInteraction.customId === 'leaderboard_cash' ? 'cash' : 'total';
+            const updatedPayload = generateLeaderboardPage(currentPage);
+            
+            await btnInteraction.update(updatedPayload).catch(() => {});
+        });
+
+        collector.on('end', async () => {
+            // Clean up: Disable or completely remove navigation components when inactive
+            const disabledPayload = generateLeaderboardPage(currentPage);
+            disabledPayload.components = []; // Strip buttons away completely
+
+            await InteractionHelper.safeEditReply(interaction, disabledPayload).catch(() => {});
+        });
+
+    }, { command: 'etest' })
+};
