@@ -111,22 +111,25 @@ export default {
             );
         }
 
-        // Check if the victim has the designated protection item
-        const hasProtectionItem = victimData.inventory?.[PROTECTION_ITEM_ID] || 0;
-        if (hasProtectionItem > 0) {
-            // Find the item details to show a nice name
+// Check if the victim has active vault protection running
+        if (victimData.vaultProtected === true) {
             const itemDetails = getItemById(PROTECTION_ITEM_ID);
             const itemName = itemDetails ? itemDetails.name : 'Vault Lock';
 
-            // Apply cooldown to host even for scouting a locked vault
+            // Apply cooldown to host for scouting a secure vault
             hostData.lastBankrob = now;
+            
+            // Consume/break the victim's lock right away!
+            victimData.vaultProtected = false;
+            
             await setEconomyData(client, guildId, hostId, hostData);
+            await setEconomyData(client, guildId, victimUser.id, victimData);
 
             return await InteractionHelper.safeEditReply(interaction, {
                 embeds: [
                     warningEmbed(
                         'Heist Aborted!',
-                        `🚨 Your crew scouted out ${victimUser.username}'s bank, but discovered they have a high-tech **${itemName}** active on their accounts. You had to call off the operation to avoid alarm triggers!`
+                        `🚨 Your crew scouted out ${victimUser.username}'s bank, but tripped an active **${itemName}**! The security grid locked down, forcing you to call off the operation. The victim's lock shattered under the stress, but your cooldown has been applied.`
                     )
                 ]
             });
@@ -258,16 +261,20 @@ export default {
                     return;
                 }
 
-                // Double check target protection items again before running success chance
-                if ((freshVictimData.inventory?.[PROTECTION_ITEM_ID] || 0) > 0) {
+// Double check target protection items again right before calculations run
+                if (freshVictimData.vaultProtected === true) {
                     const itemDetails = getItemById(PROTECTION_ITEM_ID);
                     const itemName = itemDetails ? itemDetails.name : 'Vault Lock';
+
+                    // Break the lock
+                    freshVictimData.vaultProtected = false;
+                    await setEconomyData(client, guildId, victimUser.id, freshVictimData);
 
                     await InteractionHelper.safeEditReply(interaction, {
                         embeds: [
                             warningEmbed(
-                                'Heist Tripped',
-                                `🔒 **Heist Blocked!** The crew broke in, but ${victimUser.username} has a **${itemName}** active! The alarms sounded and everyone fled empty-handed.`
+                                'Heist Defeated',
+                                `🔒 **Heist Blocked!** Your crew blew the outer doors, but ${victimUser.username}'s activated **${itemName}** kicked in, instantly wiping out your decryption code! The security layout fried the lock, but your crew had to flee empty-handed.`
                             )
                         ],
                         components: []
