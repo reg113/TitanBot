@@ -13,7 +13,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 export default {
     data: new SlashCommandBuilder()
-        .setName("etest")
+        .setName("eleaderboard")
         .setDescription("View the server's top 10 richest users.")
         .setDMPermission(false),
 
@@ -168,5 +168,5 @@ export default {
             await InteractionHelper.safeEditReply(interaction, disabledPayload).catch(() => {});
         });
 
-    }, { command: 'etest' })
+    }, { command: 'eleaderboard' })
 };
