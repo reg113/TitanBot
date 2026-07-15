@@ -11,22 +11,26 @@ import { successEmbed, warningEmbed } from '../../utils/embeds.js';
 import { getEconomyData, setEconomyData } from '../../utils/economy.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
-import { getItemById } from '../../config/shop/items.js'; // Helper to dynamically get item info
+import { getItemById } from '../../config/shop/items.js';
 
 // ==========================================
 //          --- CONFIGURABLE VALUES ---
 // ==========================================
-const MIN_VICTIM_BANK = 1500;         // Min bank balance target must have to allow a heist
-const MIN_STAKES = 500;              // Min wallet cash required to participate (for host & crew)
-const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000; // Cooldown duration in milliseconds (8 Hours)
-const PROTECTION_ITEM_ID = 'vault_lock'; // The item ID from items.js that blocks bank robberies
+const MIN_VICTIM_BANK = 1500;         
+const MIN_STAKES = 500;              
+const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000; 
+
+// --- PROTECTION & BYPASS CONFIG ---
+const PROTECTION_ITEM_ID = 'vault_lock'; 
+const LOCKPICK_ITEM_ID = 'lockpick';
+const LOCKPICK_BYPASS_CHANCE = 0.35;  // 35% chance to successfully bypass the lock
 
 // --- HEIST BALANCING MECHANICS ---
-const BASE_SUCCESS_CHANCE = 0.15;     // 15% base success rate for 1 player (the host)
-const BONUS_SUCCESS_PER_CREW = 0.10;  // +10% success rate per extra crew member who joins
-const MAX_SUCCESS_CHANCE = 0.55;      // Capped at 55% max success rate
-const STEAL_PERCENTAGE = 0.20;        // 20% of victim's bank balance is stolen on success
-const FINE_PERCENTAGE = 0.10;         // Failure fine: 10% of a participant's wallet cash
+const BASE_SUCCESS_CHANCE = 0.15;     
+const BONUS_SUCCESS_PER_CREW = 0.10;  
+const MAX_SUCCESS_CHANCE = 0.55;      
+const STEAL_PERCENTAGE = 0.20;        
+const FINE_PERCENTAGE = 0.10;         
 // ==========================================
 
 export default {
@@ -49,32 +53,18 @@ export default {
         const guildId = interaction.guildId;
         const now = Date.now();
 
-        // 1. Host & Target Validations
         if (hostId === victimUser.id) {
-            throw createError(
-                "Cannot rob self",
-                ErrorTypes.VALIDATION,
-                "You cannot plan a bank heist against your own accounts."
-            );
+            throw createError("Cannot rob self", ErrorTypes.VALIDATION, "You cannot plan a bank heist against your own accounts.");
         }
-
         if (victimUser.bot) {
-            throw createError(
-                "Cannot rob bot",
-                ErrorTypes.VALIDATION,
-                "The banking systems of bots are too heavily encrypted to break into."
-            );
+            throw createError("Cannot rob bot", ErrorTypes.VALIDATION, "The banking systems of bots are too heavily encrypted.");
         }
 
         const hostData = await getEconomyData(client, guildId, hostId);
         const victimData = await getEconomyData(client, guildId, victimUser.id);
 
         if (!hostData || !victimData) {
-            throw createError(
-                "Failed to load economy data",
-                ErrorTypes.DATABASE,
-                "Failed to load economy data. Please try again later."
-            );
+            throw createError("Failed to load economy data", ErrorTypes.DATABASE, "Failed to load profile details.");
         }
 
         // Host Cooldown Check
@@ -83,78 +73,56 @@ export default {
             const remaining = lastBankrob + BANKROB_COOLDOWN - now;
             const hours = Math.floor(remaining / (1000 * 60 * 60));
             const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-
-            throw createError(
-                "Heist cooldown active",
-                ErrorTypes.RATE_LIMIT,
-                `The feds are watching you. Wait **${hours}h ${minutes}m** before organizing another heist.`
-            );
+            throw createError("Heist cooldown active", ErrorTypes.RATE_LIMIT, `Wait **${hours}h ${minutes}m** before organizing another heist.`);
         }
 
         // Host Buy-in Wallet Check
         const hostWallet = typeof hostData.wallet === 'number' ? hostData.wallet : 0;
         if (hostWallet < MIN_STAKES) {
-            throw createError(
-                "Insufficient Funds",
-                ErrorTypes.VALIDATION,
-                `You need at least **$${MIN_STAKES.toLocaleString()}** in your wallet to fund the basic gear for this heist.`
-            );
+            throw createError("Insufficient Funds", ErrorTypes.VALIDATION, `You need at least **$${MIN_STAKES.toLocaleString()}** in your wallet to fund baseline gear.`);
         }
 
         // Victim Bank Balance Validation
         const victimBank = typeof victimData.bank === 'number' ? victimData.bank : 0;
         if (victimBank < MIN_VICTIM_BANK) {
-            throw createError(
-                "Victim too poor",
-                ErrorTypes.VALIDATION,
-                `${victimUser.username} does not have enough funds in their bank to make a heist worthwhile. (Minimum: $${MIN_VICTIM_BANK.toLocaleString()})`
-            );
+            throw createError("Victim too poor", ErrorTypes.VALIDATION, `${victimUser.username} does not have enough bank funds to target. (Minimum: $${MIN_VICTIM_BANK.toLocaleString()})`);
         }
 
-// Check if the victim has active vault protection running
+        // PRE-HEIST INITIAL CHECK: If target has a lock, host MUST have a lockpick to even start the lobby
         if (victimData.vaultProtected === true) {
-            const itemDetails = getItemById(PROTECTION_ITEM_ID);
-            const itemName = itemDetails ? itemDetails.name : 'Vault Lock';
+            const hasLockpick = (hostData.inventory?.[LOCKPICK_ITEM_ID] || 0) > 0;
+            if (!hasLockpick) {
+                hostData.lastBankrob = now;
+                await setEconomyData(client, guildId, hostId, hostData);
 
-            // Apply cooldown to host for scouting a secure vault
-            hostData.lastBankrob = now;
-            
-            // Consume/break the victim's lock right away!
-            victimData.vaultProtected = false;
-            
-            await setEconomyData(client, guildId, hostId, hostData);
-            await setEconomyData(client, guildId, victimUser.id, victimData);
-
-            return await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    warningEmbed(
-                        'Heist Aborted!',
-                        `🚨 Your crew scouted out ${victimUser.username}'s bank, but tripped an active **${itemName}**! The security grid locked down, forcing you to call off the operation. The victim's lock shattered under the stress, but your cooldown has been applied.`
-                    )
-                ]
-            });
+                return await InteractionHelper.safeEditReply(interaction, {
+                    embeds: [
+                        warningEmbed(
+                            'Heist Aborted!',
+                            `🚨 Your crew scouted out ${victimUser.username}'s bank accounts but found a highly secure vault array active. You need to buy a **🕵️‍♂️ Lockpick** from the shop to attempt this breach!`
+                        )
+                    ]
+                });
+            }
         }
 
-        // 2. Initialize Heist Lobby Setup
-        const crewIds = [hostId]; // Host starts as first crew member
+        // Initialize Heist Lobby Setup
+        const crewIds = [hostId];
 
         const buildLobbyPayload = (timeRemaining = 30) => {
-            const currentChance = Math.min(
-                BASE_SUCCESS_CHANCE + (crewIds.length - 1) * BONUS_SUCCESS_PER_CREW,
-                MAX_SUCCESS_CHANCE
-            );
+            const currentChance = Math.min(BASE_SUCCESS_CHANCE + (crewIds.length - 1) * BONUS_SUCCESS_PER_CREW, MAX_SUCCESS_CHANCE);
+            const isTargetLocked = victimData.vaultProtected === true;
 
             const lobbyEmbed = new EmbedBuilder()
                 .setTitle('🚨 Bank Heist In Progress!')
-                .setDescription(`⚡ **${interaction.user.username}** is putting together a crew to clean out **${victimUser.username}**'s bank vault!\n\nClick the button below to join the crew. Be fast—the vault cracking begins soon!`)
+                .setDescription(`⚡ **${interaction.user.username}** is gathering a crew to clean out **${victimUser.username}**'s vaults!\n\n${isTargetLocked ? '⚠️ **SECURITY WARNING:** The target has a Vault Lock active. The host will attempt a bypass break when the timer hits zero!' : 'Click the button below to join the crew.'}`)
                 .addFields(
                     { name: '💰 Target Value', value: `$${victimBank.toLocaleString()}`, inline: true },
                     { name: '⏱️ Commencing In', value: `\`${timeRemaining}s\``, inline: true },
-                    { name: '🎯 Success Rate', value: `\`${(currentChance * 100).toFixed(0)}%\` (scales with crew size)`, inline: true },
+                    { name: '🎯 Success Rate', value: `\`${(currentChance * 100).toFixed(0)}%\` ${isTargetLocked ? '(Pending Lockpick)' : ''}`, inline: true },
                     { name: '🎒 Active Crew', value: crewIds.map(id => `<@${id}>`).join('\n') }
                 )
-                .setColor(0xe74c3c)
-                .setFooter({ text: `Minimum wallet requirement to join: $${MIN_STAKES}` });
+                .setColor(0xe74c3c);
 
             const joinButton = new ButtonBuilder()
                 .setCustomId('heist_join')
@@ -162,132 +130,108 @@ export default {
                 .setEmoji('🎒')
                 .setStyle(ButtonStyle.Danger);
 
-            const row = new ActionRowBuilder().addComponents(joinButton);
-
-            return { embeds: [lobbyEmbed], components: [row] };
+            return { embeds: [lobbyEmbed], components: [new ActionRowBuilder().addComponents(joinButton)] };
         };
 
-        // Render Initial Lobby
         await InteractionHelper.safeEditReply(interaction, buildLobbyPayload(30));
-
         const replyMessage = await interaction.fetchReply();
-        const collector = replyMessage.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            time: 30000 // Lobby active duration (30 seconds)
-        });
+        const collector = replyMessage.createMessageComponentCollector({ componentType: ComponentType.Button, time: 30000 });
 
-        // 3. Crew Registrations Collector
         collector.on('collect', async (btnInteraction) => {
             const joinerId = btnInteraction.user.id;
 
             if (crewIds.includes(joinerId)) {
-                await btnInteraction.reply({
-                    content: '❌ You are already registered as part of this heist crew!',
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
+                return await btnInteraction.reply({ content: '❌ You are already in this crew!', flags: [MessageFlags.Ephemeral] });
             }
-
             if (joinerId === victimUser.id) {
-                await btnInteraction.reply({
-                    content: '❌ You cannot help rob your own bank account!',
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
+                return await btnInteraction.reply({ content: '❌ You cannot help rob your own accounts!', flags: [MessageFlags.Ephemeral] });
             }
 
             const joinerData = await getEconomyData(client, guildId, joinerId);
             if (!joinerData) {
-                await btnInteraction.reply({
-                    content: '❌ Error loading your server profile details.',
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
+                return await btnInteraction.reply({ content: '❌ Error loading profile.', flags: [MessageFlags.Ephemeral] });
             }
 
-            // Cooldown check for crew members
-            const joinerLastBankrob = joinerData.lastBankrob || 0;
-            if (now < joinerLastBankrob + BANKROB_COOLDOWN) {
-                const remaining = joinerLastBankrob + BANKROB_COOLDOWN - now;
-                const hours = Math.floor(remaining / (1000 * 60 * 60));
-                const minutes = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
-
-                await btnInteraction.reply({
-                    content: `❌ You need to lay low. You have **${hours}h ${minutes}m** remaining on your bankrob cooldown.`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
+            if (now < (joinerData.lastBankrob || 0) + BANKROB_COOLDOWN) {
+                return await btnInteraction.reply({ content: '❌ You are currently on a heist cooldown.', flags: [MessageFlags.Ephemeral] });
             }
 
-            // Wallet buy-in check for joining crew members
-            const joinerWallet = typeof joinerData.wallet === 'number' ? joinerData.wallet : 0;
-            if (joinerWallet < MIN_STAKES) {
-                await btnInteraction.reply({
-                    content: `❌ You do not have enough equipment cash. You need at least **$${MIN_STAKES}** in your wallet to absorb failure risk!`,
-                    flags: [MessageFlags.Ephemeral]
-                });
-                return;
+            if ((typeof joinerData.wallet === 'number' ? joinerData.wallet : 0) < MIN_STAKES) {
+                return await btnInteraction.reply({ content: `❌ You need at least **$${MIN_STAKES}** in your wallet to join.`, flags: [MessageFlags.Ephemeral] });
             }
 
-            // Accept player to the crew list
             crewIds.push(joinerId);
             await btnInteraction.deferUpdate().catch(() => {});
             
-            // Re-render lobby with updated crew stats
             const timeElapsed = Date.now() - collector.startTime;
             const remainingSecs = Math.max(0, Math.round((collector.options.time - timeElapsed) / 1000));
             await InteractionHelper.safeEditReply(interaction, buildLobbyPayload(remainingSecs));
         });
 
-        // 4. Heist Final Resolution Phase
+        // Heist Final Resolution Phase
         collector.on('end', async () => {
             try {
                 const freshVictimData = await getEconomyData(client, guildId, victimUser.id);
-                if (!freshVictimData) return;
+                const freshHostData = await getEconomyData(client, guildId, hostId);
+                if (!freshVictimData || !freshHostData) return;
 
                 const finalVictimBank = typeof freshVictimData.bank === 'number' ? freshVictimData.bank : 0;
+                let lockpickBypassed = false;
 
-                // Ensure balance requirements are still met at runtime
                 if (finalVictimBank < MIN_VICTIM_BANK) {
-                    await InteractionHelper.safeEditReply(interaction, {
-                        embeds: [
-                            warningEmbed(
-                                'Heist Cancelled',
-                                `The heist was cancelled because ${victimUser.username}'s bank balance fell below the required $${MIN_VICTIM_BANK.toLocaleString()} threshold during the planning phase.`
-                            )
-                        ],
+                    return await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [warningEmbed('Heist Cancelled', `The target's vault balance fell below requirements during planning.`)],
                         components: []
                     });
-                    return;
                 }
 
-// Double check target protection items again right before calculations run
+                // POST-LOBBY RUNTIME CHECK: Process Lockpick sequence if target is armed
                 if (freshVictimData.vaultProtected === true) {
-                    const itemDetails = getItemById(PROTECTION_ITEM_ID);
-                    const itemName = itemDetails ? itemDetails.name : 'Vault Lock';
+                    const currentLockpicks = freshHostData.inventory?.[LOCKPICK_ITEM_ID] || 0;
 
-                    // Break the lock
+                    if (currentLockpicks <= 0) {
+                        return await InteractionHelper.safeEditReply(interaction, {
+                            embeds: [warningEmbed('Heist Aborted', `🔒 The target vault is secured and the host no longer possesses a Lockpick item.`)],
+                            components: []
+                        });
+                    }
+
+                    // Burn the host's lockpick tool
+                    freshHostData.inventory[LOCKPICK_ITEM_ID] = currentLockpicks - 1;
+                    await setEconomyData(client, guildId, hostId, freshHostData);
+
+                    // Break the target's Vault Lock array under the stress of the attempt
                     freshVictimData.vaultProtected = false;
                     await setEconomyData(client, guildId, victimUser.id, freshVictimData);
 
-                    await InteractionHelper.safeEditReply(interaction, {
-                        embeds: [
-                            warningEmbed(
-                                'Heist Defeated',
-                                `🔒 **Heist Blocked!** Your crew blew the outer doors, but ${victimUser.username}'s activated **${itemName}** kicked in, instantly wiping out your decryption code! The security layout fried the lock, but your crew had to flee empty-handed.`
-                            )
-                        ],
-                        components: []
-                    });
-                    return;
+                    // Roll to see if lockpick successfully breaks the grid
+                    const bypassRoll = Math.random() < LOCKPICK_BYPASS_CHANCE;
+                    if (!bypassRoll) {
+                        // Apply failure cooldowns to all registered crew members
+                        for (const memberId of crewIds) {
+                            const memberData = await getEconomyData(client, guildId, memberId);
+                            if (memberData) {
+                                memberData.lastBankrob = Date.now();
+                                await setEconomyData(client, guildId, memberId, memberData);
+                            }
+                        }
+
+                        return await InteractionHelper.safeEditReply(interaction, {
+                            embeds: [
+                                warningEmbed(
+                                    'Lockpick Snapped! Heist Failed.',
+                                    `🚨 <@${hostId}> jammed their Lockpick into the grid cylinder, but the security tumbler snapped the tool! The internal vault locks held strong, alarms sounded, and the crew had to scatter empty-handed. All crew members are now on cooldown.`
+                                )
+                            ],
+                            components: []
+                        });
+                    } else {
+                        lockpickBypassed = true; // Bypassed! Allow execution logic to fall through
+                    }
                 }
 
-                // Determine Success Rate
-                const finalSuccessChance = Math.min(
-                    BASE_SUCCESS_CHANCE + (crewIds.length - 1) * BONUS_SUCCESS_PER_CREW,
-                    MAX_SUCCESS_CHANCE
-                );
-
+                // Standard Heist Probability Resolution
+                const finalSuccessChance = Math.min(BASE_SUCCESS_CHANCE + (crewIds.length - 1) * BONUS_SUCCESS_PER_CREW, MAX_SUCCESS_CHANCE);
                 const isSuccessful = Math.random() < finalSuccessChance;
                 const resultEmbed = new EmbedBuilder();
 
@@ -295,13 +239,11 @@ export default {
                     const totalStolen = Math.floor(finalVictimBank * STEAL_PERCENTAGE);
                     const splitAmount = Math.floor(totalStolen / crewIds.length);
 
-                    // Deduct from target's bank account
                     freshVictimData.bank = Math.max(0, finalVictimBank - totalStolen);
                     await setEconomyData(client, guildId, victimUser.id, freshVictimData);
 
-                    // Payout all crew members
                     for (const memberId of crewIds) {
-                        const memberData = await getEconomyData(client, guildId, memberId);
+                        const memberData = (memberId === hostId) ? freshHostData : await getEconomyData(client, guildId, memberId);
                         if (memberData) {
                             memberData.wallet = (memberData.wallet || 0) + splitAmount;
                             memberData.lastBankrob = Date.now();
@@ -311,7 +253,7 @@ export default {
 
                     resultEmbed
                         .setTitle('🎉 HEIST SUCCESSFUL! 🎉')
-                        .setDescription(`💰 The heist was an absolute masterclass! Your crew successfully compromised the security vaults of **${victimUser.username}**!`)
+                        .setDescription(`💰 The vault security layout was completely compromised! Your crew successfully bypassed operations to secure the payout! ${lockpickBypassed ? '\n\n-# 🕵️‍♂️ *Note: Vault Lock was successfully bypassed with a Lockpick structure.*' : ''}`)
                         .addFields(
                             { name: '💵 Total Vault Looted', value: `$${totalStolen.toLocaleString()}`, inline: true },
                             { name: '👥 Split Per Member', value: `$${splitAmount.toLocaleString()}`, inline: true },
@@ -320,11 +262,10 @@ export default {
                         .setColor(0x2ecc71);
 
                 } else {
-                    // Fail State: Fine every single crew member 
                     const fineLogs = [];
 
                     for (const memberId of crewIds) {
-                        const memberData = await getEconomyData(client, guildId, memberId);
+                        const memberData = (memberId === hostId) ? freshHostData : await getEconomyData(client, guildId, memberId);
                         if (memberData) {
                             const currentWallet = typeof memberData.wallet === 'number' ? memberData.wallet : 0;
                             const fine = Math.floor(currentWallet * FINE_PERCENTAGE);
@@ -339,17 +280,14 @@ export default {
 
                     resultEmbed
                         .setTitle('👮 HEIST FAILED! 👮')
-                        .setDescription(`🚨 **The silent alarm was tripped!** High-speed patrol cruisers cut off your escape routes. The entire heist crew was arrested and fined!`)
-                        .addFields(
-                            { name: '⛓️ Legal Penalties Applied', value: fineLogs.join('\n') }
-                        )
+                        .setDescription(`🚨 The emergency silent alarm caught the squad deep inside the perimeter! Cruisers blocked off escape routes. The crew was intercepted and heavily fined.`)
+                        .addFields({ name: '⛓️ Legal Penalties Applied', value: fineLogs.join('\n') })
                         .setColor(0xe74c3c);
                 }
 
                 const hoursLeft = Math.floor(BANKROB_COOLDOWN / (1000 * 60 * 60));
-                resultEmbed.setTimestamp().setFooter({ text: `All participating crew members have been put on an ${hoursLeft}-hour cooldown.` });
+                resultEmbed.setTimestamp().setFooter({ text: `All participating crew members are on an ${hoursLeft}-hour cooldown.` });
 
-                // Remove components & display final status card
                 await InteractionHelper.safeEditReply(interaction, { embeds: [resultEmbed], components: [] });
 
             } catch (err) {
