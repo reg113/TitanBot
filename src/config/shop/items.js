@@ -2,7 +2,7 @@ export const shopItems = [
 {
     id: 'skull',
     name: '💀 Ahlul Skull ping',
-    price: 2000,
+    price: 1500,
     description: 'Set off a massive Ahlul Skull ping in the current channel! Consumed upon use.',
     type: 'consumable',
     maxQuantity: 10,
