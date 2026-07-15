@@ -4,13 +4,12 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { getItemById } from '../../config/shop/items.js';
 
-// --- COOLDOWN CONFIGURATION ---
-const COOLDOWN_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+// --- COOLDOWN TRACKING ---
 const cooldowns = new Map();
 
-// Add the IDs that are allowed to ignore the cooldown completely
-const BYPASS_USERS = ['1524978803854540842', '1524988803507294238']; 
-const BYPASS_ROLES = ['1524994590036332638', '1524994590036332638'];
+// Add the IDs that are allowed to ignore cooldowns completely
+const BYPASS_USERS = ['1524978803854540842', '1524978803854540842']; 
+const BYPASS_ROLES = ['1524982677810184223', '1524982677810184223'];
 // ------------------------------
 
 export default {
@@ -34,7 +33,6 @@ export default {
         
         let itemId = '';
         if (isMessage) {
-            // Parse item_id from text content (e.g., "!use skull" -> "skull")
             const args = interaction.content.trim().split(/ +/);
             itemId = args[1] ? args[1].toLowerCase() : '';
             
@@ -46,7 +44,6 @@ export default {
                 );
             }
         } else {
-            // Defer if it is a slash command to prevent interaction token timeouts
             const deferred = await InteractionHelper.safeDefer(interaction, { ephemeral: false });
             if (!deferred) return;
             itemId = interaction.options.getString('item_id').toLowerCase();
@@ -81,13 +78,17 @@ export default {
             );
         }
 
-        // 4.5. Cooldown Verification Logic
+        // 4.5. Dynamic Cooldown Verification Logic
+        const cooldownKey = `${userId}_${itemId}`; 
         const isBypassUser = BYPASS_USERS.includes(userId);
         const isBypassRole = interaction.member?.roles?.cache?.some(role => BYPASS_ROLES.includes(role.id)) || false;
         const hasBypass = isBypassUser || isBypassRole;
 
-        if (!hasBypass && cooldowns.has(userId)) {
-            const expirationTime = cooldowns.get(userId);
+        // Pull the custom cooldown duration from the item's config (default to 0 if not set)
+        const cooldownDuration = item.cooldown || 0;
+
+        if (cooldownDuration > 0 && !hasBypass && cooldowns.has(cooldownKey)) {
+            const expirationTime = cooldowns.get(cooldownKey);
             const now = Date.now();
 
             if (now < expirationTime) {
@@ -96,9 +97,9 @@ export default {
                 const seconds = Math.floor((timeLeft % 60000) / 1000);
 
                 throw createError(
-                    "Command on Cooldown",
+                    "Item on Cooldown",
                     ErrorTypes.VALIDATION,
-                    `Slow down! You can use this command again in **${minutes}m ${seconds}s**.`
+                    `Slow down! You can use **${item.name}** again in **${minutes}m ${seconds}s**.`
                 );
             }
         }
@@ -111,51 +112,34 @@ export default {
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
 
-            // Apply the cooldown timestamp now that usage is verified and successful
-            if (!hasBypass) {
-                cooldowns.set(userId, Date.now() + COOLDOWN_DURATION);
-            }
-
             const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
             const messageMain = `<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
-                // Delete the user's triggering command message (e.g., "!use skull")
                 await interaction.delete().catch(() => {});
-
-                // Send the alert first, then follow it up with the main text body
                 const temporaryMessage = await interaction.channel.send({ content: messageAlert });
                 const mainMessage = await interaction.channel.send({ content: messageMain });
-                
-                // Add the skull reaction to the main ping message
                 await mainMessage.react('💀').catch(() => {});
 
-                // Delete the alert line after 5 seconds
                 setTimeout(() => {
                     temporaryMessage.delete().catch(() => {});
                 }, 5000);
 
             } else {
-                // For slash commands: use the reply mechanism for the alert line so it shows up first
                 await InteractionHelper.safeEditReply(interaction, { content: messageAlert });
-                
-                // Immediately drop the permanent main message beneath it
                 const mainMessage = await interaction.channel.send({ content: messageMain });
-                
-                // Add the skull reaction to the main ping message
                 await mainMessage.react('💀').catch(() => {});
                 
-                // Cleanly purge the interaction's alert response after 10 seconds
                 setTimeout(() => {
                     interaction.deleteReply().catch(() => {});
                 }, 10000);
             }
+
         } else if (itemId === 'fake_id') {
-            const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000; // Matches your 8-hour bankrob cooldown
+            const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000;
             const lastBankrob = userData.lastBankrob || 0;
             const now = Date.now();
 
-            // Guardrail: Don't let them waste the item if they don't have an active cooldown
             if (now >= lastBankrob + BANKROB_COOLDOWN) {
                 throw createError(
                     "No Active Cooldown",
@@ -164,9 +148,8 @@ export default {
                 );
             }
 
-            // Deduct 1 item from inventory & reset their heist cooldown timestamp
             userData.inventory[itemId] = currentQuantity - 1;
-            userData.lastBankrob = 0; // Wiping the timestamp bypasses the bankrob check entirely
+            userData.lastBankrob = 0;
             await setEconomyData(client, guildId, userId, userData);
 
             const activationMessage = `🪪 **Fake ID Scanned!** Your files have been scrubbed from the police database. Your \`/bankrob\` cooldown has been **completely reset**!`;
@@ -179,7 +162,6 @@ export default {
             }
 
         } else if (itemId === 'vault_lock') {
-            // Check if they already have an active lock deployed
             if (userData.vaultProtected === true) {
                 throw createError(
                     "Already Protected",
@@ -188,7 +170,6 @@ export default {
                 );
             }
 
-            // Deduct 1 item from inventory & activate the state flag
             userData.inventory[itemId] = currentQuantity - 1;
             userData.vaultProtected = true; 
             await setEconomyData(client, guildId, userId, userData);
@@ -203,7 +184,6 @@ export default {
             }
 
         } else {
-            // Guard fallback for items that are consumables but don't have functional code yet
             throw createError(
                 "Item not functional",
                 ErrorTypes.VALIDATION,
@@ -211,5 +191,14 @@ export default {
                 { itemId }
             );
         }
+
+        // ==========================================
+        // 6. Post-Execution Cooldown Application
+        // ==========================================
+        // If the execution succeeded and the item has a custom cooldown defined, apply it now
+        if (!hasBypass && cooldownDuration > 0) {
+            cooldowns.set(cooldownKey, Date.now() + cooldownDuration);
+        }
+
     }, { command: 'use' })
 };
