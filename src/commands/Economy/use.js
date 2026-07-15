@@ -150,6 +150,33 @@ export default {
                     interaction.deleteReply().catch(() => {});
                 }, 10000);
             }
+        } else if (itemId === 'fake_id') {
+            const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000; // Matches your 8-hour bankrob cooldown
+            const lastBankrob = userData.lastBankrob || 0;
+            const now = Date.now();
+
+            // Guardrail: Don't let them waste the item if they don't have an active cooldown
+            if (now >= lastBankrob + BANKROB_COOLDOWN) {
+                throw createError(
+                    "No Active Cooldown",
+                    ErrorTypes.VALIDATION,
+                    "Your legal record is already clean! You don't have an active bankrob cooldown right now, so there's no need to use this."
+                );
+            }
+
+            // Deduct 1 item from inventory & reset their heist cooldown timestamp
+            userData.inventory[itemId] = currentQuantity - 1;
+            userData.lastBankrob = 0; // Wiping the timestamp bypasses the bankrob check entirely
+            await setEconomyData(client, guildId, userId, userData);
+
+            const activationMessage = `🪪 **Fake ID Scanned!** Your files have been scrubbed from the police database. Your \`/bankrob\` cooldown has been **completely reset**!`;
+
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+                await interaction.channel.send({ content: activationMessage });
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { content: activationMessage });
+            }
 
         } else if (itemId === 'vault_lock') {
             // Check if they already have an active lock deployed
