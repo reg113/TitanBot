@@ -17,7 +17,7 @@ import { getItemById } from '../../config/shop/items.js';
 //          --- CONFIGURABLE VALUES ---
 // ==========================================
 const MIN_VICTIM_BANK = 1500;         
-const MIN_STAKES = 500;              
+const MIN_STAKES = 500;               
 const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000; 
 
 // --- PROTECTION & BYPASS CONFIG ---
@@ -216,7 +216,7 @@ export default {
                             }
                         }
 
-                        return await InteractionHelper.safeEditReply(interaction, {
+                        await InteractionHelper.safeEditReply(interaction, {
                             embeds: [
                                 warningEmbed(
                                     'Lockpick Snapped! Heist Failed.',
@@ -225,6 +225,13 @@ export default {
                             ],
                             components: []
                         });
+
+                        // 🔔 MESSAGE AFTER SNAP FAIL:
+                        await interaction.channel?.send({ 
+                            content: `🔒 **Heist Failed:** <@${hostId}> tried to pick <@${victimUser.id}>'s vault lock, but their tool snapped! The heist was completely aborted.` 
+                        }).catch(() => {});
+
+                        return;
                     } else {
                         lockpickBypassed = true; // Bypassed! Allow execution logic to fall through
                     }
@@ -234,9 +241,10 @@ export default {
                 const finalSuccessChance = Math.min(BASE_SUCCESS_CHANCE + (crewIds.length - 1) * BONUS_SUCCESS_PER_CREW, MAX_SUCCESS_CHANCE);
                 const isSuccessful = Math.random() < finalSuccessChance;
                 const resultEmbed = new EmbedBuilder();
+                let totalStolen = 0;
 
                 if (isSuccessful) {
-                    const totalStolen = Math.floor(finalVictimBank * STEAL_PERCENTAGE);
+                    totalStolen = Math.floor(finalVictimBank * STEAL_PERCENTAGE);
                     const splitAmount = Math.floor(totalStolen / crewIds.length);
 
                     freshVictimData.bank = Math.max(0, finalVictimBank - totalStolen);
@@ -289,6 +297,13 @@ export default {
                 resultEmbed.setTimestamp().setFooter({ text: `All participating crew members are on an ${hoursLeft}-hour cooldown.` });
 
                 await InteractionHelper.safeEditReply(interaction, { embeds: [resultEmbed], components: [] });
+
+                // 🔔 MESSAGE AFTER MAIN RESOLUTION (Success or Failure):
+                const finalAlertMessage = isSuccessful
+                    ? `💰 **Heist Alert:** <@${hostId}> and their crew successfully broke into <@${victimUser.id}>'s bank vault and got away with **$${totalStolen.toLocaleString()}**!`
+                    : `👮 **Heist Alert:** <@${hostId}>'s crew tried to rob <@${victimUser.id}> but were caught red-handed by the authorities!`;
+
+                await interaction.channel?.send({ content: finalAlertMessage }).catch(() => {});
 
             } catch (err) {
                 console.error('[Bankrob Execution Lifecycle Critical Crash]:', err);
