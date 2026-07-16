@@ -15,7 +15,7 @@ export const caravanScenarios = [
         id: "sandstorm",
         category: 2, // Desert Fury
         title: "The Choking Dust",
-        description: "A colossal red wall of sand appears on the horizon—a fierce desert sandstorm. You can push forward blindly or pay to hunker down securely at a nearby encampment.",
+        description: "A colossal red wall of sand appears on the horizon, a fierce desert sandstorm. You can push forward blindly or pay to hunker down securely at a nearby encampment.",
         optionALabel: "Pay for Shelter (Costs 150 Dirhams)",
         optionBLabel: "Braving the Storm (Risk Cargo)",
         optionAEffect: { goldChange: -150, integrityChange: 0, text: "You pay local nomads 150 Dirhams for heavy tents and camel shelter. You wait out the storm safely with zero damage." },
