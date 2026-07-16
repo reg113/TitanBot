@@ -102,7 +102,6 @@ export default {
             if (userData.activeCaravan) {
                 if (userData.activeCaravan.expiresAt && now > userData.activeCaravan.expiresAt) {
                     // Caravan timed out. Clear state and show the sandstorm story notification.
-                    // (Note: No cooldown is applied here so they can retry immediately after a loss)
                     lostCaravanNotice = "🌪️ **Expedition Lost!**\n*It looks like your previous caravan got lost in a fierce sandstorm! Your merchants had to abandon their cargo in the dunes to survive, returning to the city empty-handed. But a new day dawns...*\n\n";
                     
                     userData.activeCaravan = null;
@@ -125,7 +124,7 @@ export default {
                 }
             }
 
-            const entryFee = 500;
+            const entryFee = 800; // Raised from 500 to increase risk
             if (userData.wallet < entryFee) {
                 throw createError(
                     "Insufficient Funds",
@@ -264,15 +263,21 @@ export default {
                     });
 
                 } else if (i.customId === 'caravan_market') {
-                    const baseValue = 1800; 
+                    // --- HIGH-STAKES DYNAMIC MARKET ROLLS ---
+                    const baseValue = Math.floor(Math.random() * (1600 - 1200 + 1)) + 1200; // Fluctuating base value
                     const cargoValue = Math.floor(baseValue * (exp.cargoIntegrity / 100));
                     const totalInvested = exp.goldSpent;
                     const netProfit = cargoValue - totalInvested;
 
+                    // Determine demand flavor text
+                    let marketCondition = "Average Demand";
+                    if (baseValue >= 1500) marketCondition = "🔥 Hot (High Demand)";
+                    else if (baseValue <= 1300) marketCondition = "❄️ Cold (Low Demand)";
+
                     freshUser.wallet += cargoValue; 
                     freshUser.activeCaravan = null; // Clear active state successfully
                     
-                    // --- APPLY 30-MINUTE COOLDOWN ON SUCCESSFUL COMPLETION ---
+                    // Apply 30-minute cooldown
                     freshUser.caravanCooldown = Date.now() + 30 * 60 * 1000; 
 
                     await setEconomyData(client, guildId, userId, freshUser);
@@ -282,6 +287,7 @@ export default {
                         description: `Your caravan passes through the heavy copper gates of Baghdad! Merchants immediately gather to inspect your goods.`,
                         color: '#2A9D8F'
                     }).addFields(
+                        { name: '📊 Market Condition', value: marketCondition, inline: false },
                         { name: '📦 Remaining Cargo Integrity', value: `${exp.cargoIntegrity}%`, inline: false },
                         { name: '📈 Market Sale Price', value: `+${cargoValue.toLocaleString()} Dirhams`, inline: true },
                         { name: '📉 Total Expenses', value: `-${totalInvested.toLocaleString()} Dirhams`, inline: true },
