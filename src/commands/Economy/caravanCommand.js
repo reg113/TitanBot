@@ -78,20 +78,32 @@ export default {
             const inventory = userData.inventory || {};
             const hasCamelArmor = inventory["camel_armor"] > 0;
 
-            // --- OPTION 1: SELF-HEALING SYSTEM ---
-            // Check if they have an active caravan and if it has expired (5-minute safety threshold)
+            let lostCaravanNotice = ""; // Container for the sandstorm flavor text
+
             if (userData.activeCaravan) {
                 const now = Date.now();
                 if (userData.activeCaravan.expiresAt && now > userData.activeCaravan.expiresAt) {
-                    // Caravan has timed out. Silently reset their state and let them proceed!
+                    // --- SELF-HEALING WITH FLAVOR ---
+                    // Caravan timed out. Clear state and prepare the sandstorm story notification!
+                    lostCaravanNotice = "🌪️ **Expedition Lost!**\n*It looks like your previous caravan got lost in a fierce sandstorm! Your merchants had to abandon their cargo in the dunes to survive, returning to the city empty-handed. But a new day dawns...*\n\n";
+                    
                     userData.activeCaravan = null;
                     await setEconomyData(client, guildId, userId, userData);
                 } else {
-                    // Still active and fresh. Block them.
+                    // --- LIVE COUNTDOWN TIMER ---
+                    // Still active and fresh. Calculate the remaining time left on the clock.
+                    const timeLeftMs = userData.activeCaravan.expiresAt - now;
+                    const minutes = Math.floor(timeLeftMs / 60000);
+                    const seconds = Math.floor((timeLeftMs % 60000) / 1000);
+                    
+                    const countdownString = minutes > 0 
+                        ? `**${minutes}m ${seconds}s**` 
+                        : `**${seconds}s**`;
+
                     throw createError(
                         "Expedition in Progress",
                         ErrorTypes.GAME_RULE,
-                        "Your caravan is already traveling out in the desert! You must complete your current journey, wait for it to expire, or run `/caravan rescue`."
+                        `🐪 **Your caravan is already traveling out in the desert!**\n\nYour scouts estimate they will reach the oasis gates (or lose communication) in ${countdownString}.\n\nYou must complete your current journey, wait for them to return, or run \`/caravan rescue\` immediately.`
                     );
                 }
             }
@@ -113,14 +125,14 @@ export default {
                 goldSpent: entryFee,
                 usedScenarios: [],
                 currentScenario: null,
-                expiresAt: Date.now() + 5 * 60 * 1000 // Self-heal boundary
+                expiresAt: Date.now() + 5 * 60 * 1000 // 5-minute self-heal limit
             };
             await setEconomyData(client, guildId, userId, userData);
 
-            // Build Departure Screen
+            // Build Departure Screen (Incorporate the sandstorm notice if it happened)
             const embed = createEmbed({
                 title: "🐫 Caravan Dispatch",
-                description: `*“We depart Damascus with 10 fine camels, loaded with spices and glass beads. The desert is unforgiving, but the fortune at the end of the road is legendary.”*\n\nYour cargo has been packed at **100% Integrity**. Let the journey begin.`,
+                description: `${lostCaravanNotice}*“We depart Damascus with 10 fine camels, loaded with spices and glass beads. The desert is unforgiving, but the fortune at the end of the road is legendary.”*\n\nYour cargo has been packed at **100% Integrity**. Let the journey begin.`,
                 color: '#E0A96D'
             }).addFields(
                 { name: '💰 Investment', value: `${entryFee} Dirhams`, inline: true },
@@ -268,11 +280,9 @@ export default {
             // Handle Collector End
             collector.on('end', async (_, reason) => {
                 if (reason !== 'user' && reason !== 'messageDelete') {
-                    const freshUser = await getEconomyData(client, guildId, userId);
-                    
-                    // We DO NOT set activeCaravan to null immediately here.
-                    // Instead, we let the 5-minute self-heal or /caravan rescue command handle it.
-                    // This protects players who briefly lag or disconnect from getting instant state failures.
+                    // Do not clear database lock here anymore.
+                    // This allows Option 1 (self-healing timer) and Option 2 (rescue command) 
+                    // to completely manage orphaned states!
                     try {
                         const disabledRow = new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
