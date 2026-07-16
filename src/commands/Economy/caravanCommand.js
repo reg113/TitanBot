@@ -75,8 +75,6 @@ export default {
         // ---------------------------------------------------------
         if (subcommand === 'start') {
             const userData = await getEconomyData(client, guildId, userId);
-            const inventory = userData.inventory || {};
-            const hasCamelArmor = inventory["camel_armor"] > 0;
             const now = Date.now();
 
             let lostCaravanNotice = ""; // Container for the sandstorm flavor text
@@ -155,10 +153,6 @@ export default {
                 { name: '📦 Cargo Integrity', value: '100%', inline: true }
             );
 
-            if (hasCamelArmor) {
-                embed.setFooter({ text: "🛡️ Camel Armor is equipped: Integrity damage is reduced by 30%!" });
-            }
-
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('caravan_advance')
@@ -229,12 +223,8 @@ export default {
                     const scenario = exp.currentScenario;
                     const chosenEffect = i.customId === 'option_a' ? scenario.optionAEffect : scenario.optionBEffect;
 
-                    // Apply Camel Armor reduction if applicable
-                    let integrityDamage = chosenEffect.integrityChange;
-                    if (hasCamelArmor && integrityDamage < 0) {
-                        integrityDamage = Math.round(integrityDamage * 0.7); 
-                    }
-
+                    // Direct cargo and gold calculations without armor checks
+                    const integrityDamage = chosenEffect.integrityChange;
                     exp.cargoIntegrity = Math.max(0, exp.cargoIntegrity + integrityDamage);
                     exp.goldSpent -= chosenEffect.goldChange; 
 
