@@ -12,17 +12,53 @@ import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHan
 import { logger } from '../../utils/logger.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-const ENTRY_FEE = 100;
 const GAME_COOLDOWN = 30 * 1000; // 30 seconds between games
-const GAME_TIMEOUT = 180000; // 3-minute game limit
+const GAME_TIMEOUT = 180000; // 3-minute hard limit for game completion
 
-// Emojis used for the matching pairs
-const EMOJI_POOL = ['🍎', '🦊', '🚀', '💎', '🍕', '🎸', '👾', '👑'];
+// Up to 10 pairs needed for the 4x5 Hard level grid
+const EMOJI_POOL = ['🍎', '🦊', '🚀', '💎', '🍕', '🎸', '👾', '👑', '🐼', '🎈'];
+
+const LEVELS = {
+    easy: {
+        name: 'Easy',
+        rows: 3,
+        cols: 4,
+        pairs: 6,
+        rewards: { fast: 150, mid: 100, slow: 50 },
+        thresholds: { fast: 8, mid: 12 }
+    },
+    medium: {
+        name: 'Medium',
+        rows: 4,
+        cols: 4,
+        pairs: 8,
+        rewards: { fast: 300, mid: 200, slow: 120 },
+        thresholds: { fast: 12, mid: 16 }
+    },
+    hard: {
+        name: 'Hard',
+        rows: 4,
+        cols: 5,
+        pairs: 10,
+        rewards: { fast: 500, mid: 350, slow: 200 },
+        thresholds: { fast: 15, mid: 20 }
+    }
+};
 
 export default {
     data: new SlashCommandBuilder()
         .setName('memory')
-        .setDescription('Play a 4x4 card matching memory game to win cash!'),
+        .setDescription('Play a card matching memory game to win cash! (Free to play)')
+        .addStringOption(option => 
+            option.setName('difficulty')
+                .setDescription('Select the grid size & difficulty level (defaults to Medium)')
+                .setRequired(false)
+                .addChoices(
+                    { name: 'Easy (3x4 Grid - 6 Pairs)', value: 'easy' },
+                    { name: 'Medium (4x4 Grid - 8 Pairs)', value: 'medium' },
+                    { name: 'Hard (4x5 Grid - 10 Pairs)', value: 'hard' }
+                )
+        ),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
@@ -32,7 +68,11 @@ export default {
         const guildId = interaction.guildId;
         const now = Date.now();
 
-        logger.debug(`[ECONOMY] Memory game request started for ${userId}`, { userId, guildId });
+        // Determine level configuration
+        const chosenDiff = interaction.options.getString('difficulty') || 'medium';
+        const levelConfig = LEVELS[chosenDiff];
+
+        logger.debug(`[ECONOMY] Memory game (${levelConfig.name}) started for ${userId}`, { userId, guildId });
 
         // 1. Fetch User Profile
         const userData = await getEconomyData(client, guildId, userId);
@@ -57,49 +97,35 @@ export default {
             );
         }
 
-        // 3. Balance Check
-        const currentBalance = userData.wallet || 0;
-        if (currentBalance < ENTRY_FEE) {
-            throw createError(
-                "Insufficient funds for memory game",
-                ErrorTypes.VALIDATION,
-                `It costs **$${ENTRY_FEE}** to play Memory. You currently have **$${currentBalance.toLocaleString()}**.`,
-                { userId, guildId, balance: currentBalance }
-            );
-        }
-
-        // 4. Deduct Entry Fee & Set Cooldown
-        userData.wallet = currentBalance - ENTRY_FEE;
+        // 3. Set Cooldown immediately to protect write actions
         userData.lastMemoryGame = now;
         await setEconomyData(client, guildId, userId, userData);
 
-        logger.info(`[ECONOMY_TRANSACTION] Memory entry fee deducted`, {
-            userId,
-            guildId,
-            amount: -ENTRY_FEE,
-            newWallet: userData.wallet,
-            timestamp: new Date().toISOString()
-        });
-
-        // 5. Initialize Shuffled Board (8 pairs = 16 cards)
-        const cards = [...EMOJI_POOL, ...EMOJI_POOL];
+        // 4. Initialize Shuffled Board based on difficulty level rules
+        const activeEmojis = EMOJI_POOL.slice(0, levelConfig.pairs);
+        const cards = [...activeEmojis, ...activeEmojis];
+        
         for (let i = cards.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [cards[i], cards[j]] = [cards[j], cards[i]];
         }
 
-        const revealed = Array(16).fill(false); // Keeps track of matched pairs
-        let firstSelectedIndex = null; // Index of the first card flipped in a turn
+        const totalButtonsCount = levelConfig.rows * levelConfig.cols;
+        const revealed = Array(totalButtonsCount).fill(false); // Tracks successfully matched positions
+        let firstSelectedIndex = null; 
         let moves = 0;
-        let isProcessing = false; // Blocks input while showing mismatched pairs
+        let isProcessing = false; 
 
-        // Helper: Build the 4x4 grid representation using Action Rows
+        // Generate native relative discord timestamp so client counts down live
+        const expiryTimestamp = Math.floor((now + GAME_TIMEOUT) / 1000);
+
+        // Helper: Build the custom layout dynamic grid
         function buildGrid(disableAll = false, tempRevealIndex = null) {
             const rows = [];
-            for (let r = 0; r < 4; r++) {
+            for (let r = 0; r < levelConfig.rows; r++) {
                 const row = new ActionRowBuilder();
-                for (let c = 0; c < 4; c++) {
-                    const index = r * 4 + c;
+                for (let c = 0; c < levelConfig.cols; c++) {
+                    const index = r * levelConfig.cols + c;
                     const isMatched = revealed[index];
                     const isSelected = index === firstSelectedIndex;
                     const isTempFlipped = index === tempRevealIndex;
@@ -130,18 +156,22 @@ export default {
         // Helper: Generate main interface embed
         function buildGameEmbed(statusMessage = "Find all matching pairs! Click any card to begin.") {
             const matchesLeft = revealed.filter(val => !val).length / 2;
+            const rewards = levelConfig.rewards;
+            const thresholds = levelConfig.thresholds;
+
             return infoEmbed(
-                "🧠 Mind Match: Memory Pairs",
+                `🧠 Mind Match: Memory Pairs (${levelConfig.name})`,
                 statusMessage
             )
             .addFields(
-                { name: "📊 Game Stats", value: `Moves Made: **${moves}**\nPairs Left: **${matchesLeft}** / 8`, inline: true },
-                { name: "💰 Prize Pool", value: `• Under 12 moves: **$300**\n• 12-16 moves: **$200**\n• 17+ moves: **$120**`, inline: true }
+                { name: "📊 Game Stats", value: `Moves Made: **${moves}**\nPairs Left: **${matchesLeft}** / ${levelConfig.pairs}`, inline: true },
+                { name: "⏳ Game Timer", value: `Expiring: <t:${expiryTimestamp}:R>`, inline: true },
+                { name: "💰 Rewards Pool", value: `• Under ${thresholds.fast} moves: **$${rewards.fast}**\n• ${thresholds.fast}-${thresholds.mid} moves: **$${rewards.mid}**\n• ${thresholds.mid + 1}+ moves: **$${rewards.slow}**`, inline: false }
             )
             .setFooter({ text: "Incorrect pairs lock input for 1.5s so you can memorize them!" });
         }
 
-        // Send the initial clean game state
+        // Send initial game state
         await InteractionHelper.safeEditReply(interaction, {
             embeds: [buildGameEmbed()],
             components: buildGrid()
@@ -169,7 +199,7 @@ export default {
             await btnInteraction.deferUpdate();
             const clickedIndex = parseInt(btnInteraction.customId.split('_')[1]);
 
-            // First card choice in a matching round
+            // First card selection
             if (firstSelectedIndex === null) {
                 firstSelectedIndex = clickedIndex;
                 await InteractionHelper.safeEditReply(interaction, {
@@ -179,7 +209,7 @@ export default {
                 return;
             }
 
-            // Second card choice
+            // Second card selection
             const cardOne = cards[firstSelectedIndex];
             const cardTwo = cards[clickedIndex];
             moves++;
@@ -204,18 +234,16 @@ export default {
                 // MISMATCH
                 isProcessing = true;
 
-                // Temporarily show both flipped cards so the user can look and memorize
                 await InteractionHelper.safeEditReply(interaction, {
                     embeds: [buildGameEmbed(`❌ **No match.** Memorize their positions before they flip back!`)],
                     components: buildGrid(true, clickedIndex)
                 });
 
-                // Hold screen state for 1.5 seconds, then flip cards back face down
+                // Hold state briefly to let the player memorize the board positions
                 setTimeout(async () => {
                     firstSelectedIndex = null;
                     isProcessing = false;
 
-                    // Ensure the interaction wasn't deleted during the sleep interval
                     try {
                         await InteractionHelper.safeEditReply(interaction, {
                             embeds: [buildGameEmbed("Keep hunting! Try to remember where the shapes are located.")],
@@ -232,55 +260,56 @@ export default {
             const disabledGrid = buildGrid(true);
 
             if (reason === 'won') {
-                let reward = 120;
+                const elapsedSeconds = Math.floor((Date.now() - now) / 1000);
+                const rewards = levelConfig.rewards;
+                const thresholds = levelConfig.thresholds;
+
+                let reward = rewards.slow;
                 let rating = "Good Effort! ⭐";
 
-                if (moves < 12) {
-                    reward = 300;
+                if (moves < thresholds.fast) {
+                    reward = rewards.fast;
                     rating = "Grandmaster! 🏆🏆🏆";
-                } else if (moves <= 16) {
-                    reward = 200;
+                } else if (moves <= thresholds.mid) {
+                    reward = rewards.mid;
                     rating = "Excellent Focus! 🌟";
                 }
 
-                const netProfit = reward - ENTRY_FEE;
-
-                // Load database transaction freshly to protect data scaling
+                // Load fresh DB entry
                 const freshUserData = await getEconomyData(client, guildId, userId);
                 if (freshUserData) {
                     freshUserData.wallet = (freshUserData.wallet || 0) + reward;
                     await setEconomyData(client, guildId, userId, freshUserData);
                 }
 
-                logger.info(`[ECONOMY_TRANSACTION] Memory game won`, {
+                logger.info(`[ECONOMY_TRANSACTION] Memory game won on ${levelConfig.name}`, {
                     userId,
                     guildId,
                     moves,
+                    elapsedSeconds,
                     reward,
-                    netProfit,
                     newWallet: freshUserData ? freshUserData.wallet : 'Unknown'
                 });
 
                 const winEmbed = successEmbed(
-                    "🧠 Match Grid Completed!",
-                    `Incredible! You cleared the board with perfect recall.`
+                    `🧠 Match Grid Completed! (${levelConfig.name})`,
+                    `Incredible! You cleared the board with great recall.`
                 )
                 .addFields(
                     { name: '🎖️ Rating', value: rating, inline: true },
-                    { name: '🔄 Moves Taken', value: `**${moves} total moves**`, inline: true },
-                    { name: '\u200B', value: '\u200B', inline: true }, // Empty field separator
-                    { name: '💰 Total Earnings', value: `**$${reward.toLocaleString()}**`, inline: true },
-                    { name: '📈 Net Yield', value: `+$${netProfit.toLocaleString()}`, inline: true },
+                    { name: '🔄 Moves Taken', value: `**${moves} moves**`, inline: true },
+                    { name: '⏱️ Time Elapsed', value: `**${elapsedSeconds} seconds**`, inline: true },
+                    { name: '💰 Cash Reward', value: `**+$${reward.toLocaleString()}**`, inline: true },
                     { name: '💼 Wallet Balance', value: `$${freshUserData ? freshUserData.wallet.toLocaleString() : 'N/A'}`, inline: true }
                 );
 
                 await InteractionHelper.safeEditReply(interaction, { embeds: [winEmbed], components: disabledGrid });
 
             } else {
-                // Timeout / Aborted Game state
+                // Timeout / Aborted
                 const timeoutEmbed = errorEmbed(
-                    "⌛ Memory Game Aborted",
-                    `The game took too long to complete or was interrupted. Your **$${ENTRY_FEE}** entry fee was consumed by the dealer.`
+                    "⌛ Memory Game Ended",
+                    `Your match session expired. You didn't complete the grid in time!`
                 );
 
                 await InteractionHelper.safeEditReply(interaction, { embeds: [timeoutEmbed], components: disabledGrid });
