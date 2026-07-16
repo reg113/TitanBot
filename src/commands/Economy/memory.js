@@ -18,6 +18,9 @@ const GAME_TIMEOUT = 180000; // 3-minute hard limit for game completion
 // Up to 10 pairs needed for the 4x5 Hard level grid
 const EMOJI_POOL = ['🍎', '🦊', '🚀', '💎', '🍕', '🎸', '👾', '👑', '🐼', '🎈'];
 
+// Global memory safety track (costs almost 0 RAM/CPU)
+const activeGames = new Set();
+
 const LEVELS = {
     easy: {
         name: 'Easy',
@@ -68,13 +71,23 @@ export default {
         const guildId = interaction.guildId;
         const now = Date.now();
 
+        // 1. Prevent concurrent games
+        if (activeGames.has(userId)) {
+            throw createError(
+                "Memory game already in progress",
+                ErrorTypes.VALIDATION,
+                "⚠️ You already have an active Mind Match game running! Finish or quit that game before starting a new one.",
+                { userId }
+            );
+        }
+
         // Determine level configuration
         const chosenDiff = interaction.options.getString('difficulty') || 'medium';
         const levelConfig = LEVELS[chosenDiff];
 
         logger.debug(`[ECONOMY] Memory game (${levelConfig.name}) started for ${userId}`, { userId, guildId });
 
-        // 1. Fetch User Profile
+        // 2. Fetch User Profile
         const userData = await getEconomyData(client, guildId, userId);
         if (!userData) {
             throw createError(
@@ -85,7 +98,7 @@ export default {
             );
         }
 
-        // 2. Cooldown Verification
+        // 3. Cooldown Verification
         const lastMemoryGame = userData.lastMemoryGame || 0;
         if (now < lastMemoryGame + GAME_COOLDOWN) {
             const timeRemaining = lastMemoryGame + GAME_COOLDOWN - now;
@@ -97,11 +110,14 @@ export default {
             );
         }
 
-        // 3. Set Cooldown immediately to protect write actions
+        // Lock user into active play state
+        activeGames.add(userId);
+
+        // 4. Set Cooldown immediately to protect write actions
         userData.lastMemoryGame = now;
         await setEconomyData(client, guildId, userId, userData);
 
-        // 4. Initialize Shuffled Board based on difficulty level rules
+        // 5. Initialize Shuffled Board based on difficulty level rules
         const activeEmojis = EMOJI_POOL.slice(0, levelConfig.pairs);
         const cards = [...activeEmojis, ...activeEmojis];
         
@@ -277,6 +293,9 @@ export default {
         });
 
         collector.on('end', async (collected, reason) => {
+            // Free the player up to play again instantly
+            activeGames.delete(userId);
+
             const disabledGrid = buildGrid(true);
 
             if (reason === 'won') {
