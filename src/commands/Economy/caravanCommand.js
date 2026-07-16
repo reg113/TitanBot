@@ -1,65 +1,73 @@
-// /caravanCommand.js
+// commands/caravanCommand.js
 
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getRandomCaravanScenario } from '../utils/caravanScenarios.js';
-
-/* 
-================================================================================
-caravanCommand.js
-================================================================================
-*/
-import { getEconomyData, setEconomyData } from '../utils/economy.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { createEmbed } from '../../utils/embeds.js';
+import { getEconomyData, setEconomyData } from '../../utils/economy.js';
+import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
+import { getRandomCaravanScenario } from '../../utils/caravanScenarios.js';
 
 export default {
     data: new SlashCommandBuilder()
         .setName('caravan')
         .setDescription('Launch an interactive Silk Road caravan expedition!'),
-    
-    async execute(interaction) {
-        const userId = interaction.user.id;
-        
-        // 1. Fetch player profile from your actual database setup
-        const userData = await getEconomyData(userId);
 
-        // State Check: Prevent starting multiple runs simultaneously
-        if (userData.status === 'on_expedition') {
-            return interaction.reply({
-                content: "⚠️ **Your caravan is already out in the desert!** Complete your active expedition before starting a new one.",
-                ephemeral: true
-            });
+    execute: withErrorHandling(async (interaction, config, client) => {
+        // Safe Defer standard used across your commands
+        const deferred = await InteractionHelper.safeDefer(interaction);
+        if (!deferred) return;
+
+        const userId = interaction.user.id;
+        const guildId = interaction.guildId;
+
+        // Retrieve existing user profile
+        const userData = await getEconomyData(client, guildId, userId);
+        const inventory = userData.inventory || {};
+        const hasCamelArmor = inventory["camel_armor"] > 0;
+
+        // Prevent overlapping active caravans
+        if (userData.activeCaravan) {
+            throw createError(
+                "Expedition in Progress",
+                ErrorTypes.GAME_RULE,
+                "Your caravan is already traveling out in the desert! You must resolve your current journey before dispatching another."
+            );
         }
 
         const entryFee = 500;
-        if (userData.gold < entryFee) {
-            return interaction.reply({
-                content: `❌ **You do not have enough Gold!** Preparing a caravan requires at least **${entryFee} Gold** for supplies. (You have: ${userData.gold} Gold)`,
-                ephemeral: true
-            });
+        if (userData.wallet < entryFee) {
+            throw createError(
+                "Insufficient Funds",
+                ErrorTypes.GAME_RULE,
+                `Preparing a caravan requires at least **${entryFee.toLocaleString()} Dirhams** for supplies and camel teams. (Your wallet: ${userData.wallet.toLocaleString()} Dirhams)`
+            );
         }
 
-        // Initialize Caravan Journey State
-        userData.gold -= entryFee;
-        userData.status = 'on_expedition';
-        userData.expedition = {
-            step: 1, // Steps: 1 (Start) -> 2 (Encounter 1) -> 3 (Encounter 2) -> 4 (Market)
+        // Initialize active caravan state
+        userData.wallet -= entryFee;
+        userData.activeCaravan = {
+            step: 1, // Progressing: 1 (Departure) -> 2 (Encounter 1) -> 3 (Encounter 2) -> 4 (Market Gates)
             cargoIntegrity: 100,
             goldSpent: entryFee,
             usedScenarios: [],
             currentScenario: null
         };
-        
-        // Save state changes back to database
-        await setEconomyData(userId, userData);
+        await setEconomyData(client, guildId, userId, userData);
 
         // Build Departure Screen
-        const embed = new EmbedBuilder()
-            .setColor('#E0A96D')
-            .setTitle('🐫 Caravan Dispatch')
-            .setDescription(`*“We depart Damascus with 10 fine camels, loaded with spices and glass beads. The desert is unforgiving, but the fortune at the end of the road is legendary.”*\n\nYour cargo has been packed at **100% Integrity**. Let the journey begin.`)
-            .addFields(
-                { name: '💰 Investment', value: `${entryFee} Gold`, inline: true },
-                { name: '📦 Cargo Integrity', value: '100%', inline: true }
-            );
+        const embed = createEmbed({
+            title: "🐫 Caravan Dispatch",
+            description: `*“We depart Damascus with 10 fine camels, loaded with spices and glass beads. The desert is unforgiving, but the fortune at the end of the road is legendary.”*\n\nYour cargo has been packed at **100% Integrity**. Let the journey begin.`,
+            color: '#E0A96D'
+        }).addFields(
+            { name: '💰 Investment', value: `${entryFee} Dirhams`, inline: true },
+            { name: '📦 Cargo Integrity', value: '100%', inline: true }
+        );
+
+        // Render Camel Armor warning details if owned
+        if (hasCamelArmor) {
+            embed.setFooter({ text: "🛡️ Camel Armor is equipped: Integrity damage is reduced by 30%!" });
+        }
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -68,41 +76,46 @@ export default {
                 .setStyle(ButtonStyle.Primary)
         );
 
-        const response = await interaction.reply({
+        await InteractionHelper.safeEditReply(interaction, {
             embeds: [embed],
             components: [row]
         });
 
-        // Set up button collector (Ends if player is inactive for 60 seconds)
-        const collector = response.createMessageComponentCollector({
+        // Set up the interactive Button Collector directly tied to this message instance
+        const message = await interaction.fetchReply();
+        const collector = message.createMessageComponentCollector({
             filter: i => i.user.id === userId,
-            time: 60000 
+            time: 60000 // 60 seconds inactivity timeout
         });
 
         collector.on('collect', async i => {
-            collector.resetTimer(); // Reset inactivity timer on click
+            collector.resetTimer(); // Reset safety timeout on click
 
-            // Re-fetch profile to keep calculations secure & accurate
-            const freshUser = await getEconomyData(userId);
-            const exp = freshUser.expedition;
+            // Re-fetch economy profile to ensure data consistency
+            const freshUser = await getEconomyData(client, guildId, userId);
+            const exp = freshUser.activeCaravan;
+
+            if (!exp) {
+                return i.reply({ content: "⚠️ This caravan session has expired or was already closed.", ephemeral: true });
+            }
 
             if (i.customId === 'caravan_advance') {
-                // Fetch next unique scenario
+                // Determine next unique scenario from our scenario database
                 const scenario = getRandomCaravanScenario(exp.usedScenarios);
                 exp.currentScenario = scenario;
                 exp.usedScenarios.push(scenario.id);
                 exp.step += 1;
 
-                await setEconomyData(userId, freshUser);
+                await setEconomyData(client, guildId, userId, freshUser);
 
-                const encounterEmbed = new EmbedBuilder()
-                    .setColor('#D4A373')
-                    .setTitle(`🧭 Day ${exp.step * 10}: ${scenario.title}`)
-                    .setDescription(scenario.description)
-                    .addFields(
-                        { name: '📦 Cargo Integrity', value: `${exp.cargoIntegrity}%`, inline: true },
-                        { name: '💰 Gold Spent So Far', value: `${exp.goldSpent} Gold`, inline: true }
-                    );
+                const encounterEmbed = createEmbed({
+                    title: `🧭 Day ${exp.step * 10}: ${scenario.title}`,
+                    description: scenario.description,
+                    color: '#D4A373'
+                }).addFields(
+                    { name: '📦 Cargo Integrity', value: `${exp.cargoIntegrity}%`, inline: true },
+                    { name: '💰 Expenses Accrued', value: `${exp.goldSpent} Dirhams`, inline: true }
+                );
 
                 const choiceRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -124,16 +137,22 @@ export default {
                 const scenario = exp.currentScenario;
                 const chosenEffect = i.customId === 'option_a' ? scenario.optionAEffect : scenario.optionBEffect;
 
-                // Process consequences
-                exp.cargoIntegrity = Math.max(0, exp.cargoIntegrity + chosenEffect.integrityChange);
-                exp.goldSpent -= chosenEffect.goldChange; // Modifies total expenditure debt
+                // Process integrity effects (Apply Camel Armor damage reduction helper)
+                let integrityDamage = chosenEffect.integrityChange;
+                if (hasCamelArmor && integrityDamage < 0) {
+                    integrityDamage = Math.round(integrityDamage * 0.7); // 30% damage reduction
+                }
 
-                await setEconomyData(userId, freshUser);
+                exp.cargoIntegrity = Math.max(0, exp.cargoIntegrity + integrityDamage);
+                exp.goldSpent -= chosenEffect.goldChange; // Adjust tracked debt / costs
 
-                const resultEmbed = new EmbedBuilder()
-                    .setColor(exp.cargoIntegrity > 30 ? '#CCD5AE' : '#E63946')
-                    .setTitle(`📝 Journal Entry: Day ${exp.step * 10}`)
-                    .setDescription(`${chosenEffect.text}\n\nYour cargo integrity is now sitting at **${exp.cargoIntegrity}%**.`);
+                await setEconomyData(client, guildId, userId, freshUser);
+
+                const resultEmbed = createEmbed({
+                    title: `📝 Journal Entry: Day ${exp.step * 10}`,
+                    description: `${chosenEffect.text}\n\nYour cargo integrity is now sitting at **${exp.cargoIntegrity}%**.`,
+                    color: exp.cargoIntegrity > 30 ? '#CCD5AE' : '#E63946'
+                });
 
                 const nextStep = exp.step >= 3 ? 'caravan_market' : 'caravan_advance';
                 const nextLabel = exp.step >= 3 ? 'Enter Market Gates' : 'Advance Caravan';
@@ -152,52 +171,49 @@ export default {
                 });
 
             } else if (i.customId === 'caravan_market') {
-                // Final payout calculations based on integrity
+                // Final payout calculations relative to remaining integrity
                 const baseValue = 1800; 
                 const cargoValue = Math.floor(baseValue * (exp.cargoIntegrity / 100));
                 const totalInvested = exp.goldSpent;
                 const netProfit = cargoValue - totalInvested;
 
-                // Credit the user's account and reset active status
-                freshUser.gold += cargoValue; 
-                freshUser.status = 'idle';
-                freshUser.expedition = null;
-                await setEconomyData(userId, freshUser);
+                // Credit player and clear active expedition lock
+                freshUser.wallet += cargoValue; 
+                freshUser.activeCaravan = null;
+                await setEconomyData(client, guildId, userId, freshUser);
 
-                const marketEmbed = new EmbedBuilder()
-                    .setColor('#2A9D8F')
-                    .setTitle('🕌 The Souk of Baghdad')
-                    .setDescription(`Your caravan passes through the heavy copper gates of Baghdad! Merchants immediately gather to inspect your goods.`)
-                    .addFields(
-                        { name: '📦 Remaining Cargo Integrity', value: `${exp.cargoIntegrity}%`, inline: false },
-                        { name: '📈 Market Sale Price', value: `+${cargoValue} Gold`, inline: true },
-                        { name: '📉 Total Expenses', value: `-${totalInvested} Gold`, inline: true },
-                        { name: '⚖️ Net Return', value: `${netProfit >= 0 ? '🟢' : '🔴'} ${netProfit} Gold`, inline: false },
-                        { name: '💰 New Gold Balance', value: `${freshUser.gold} Gold`, inline: false }
-                    );
+                const marketEmbed = createEmbed({
+                    title: '🕌 The Souk of Baghdad',
+                    description: `Your caravan passes through the heavy copper gates of Baghdad! Merchants immediately gather to inspect your goods.`,
+                    color: '#2A9D8F'
+                }).addFields(
+                    { name: '📦 Remaining Cargo Integrity', value: `${exp.cargoIntegrity}%`, inline: false },
+                    { name: '📈 Market Sale Price', value: `+${cargoValue.toLocaleString()} Dirhams`, inline: true },
+                    { name: '📉 Total Expenses', value: `-${totalInvested.toLocaleString()} Dirhams`, inline: true },
+                    { name: '⚖️ Net Return', value: `${netProfit >= 0 ? '🟢' : '🔴'} ${netProfit.toLocaleString()} Dirhams`, inline: false },
+                    { name: '💰 New Wallet Balance', value: `${freshUser.wallet.toLocaleString()} Dirhams`, inline: false }
+                );
 
                 await i.update({
                     embeds: [marketEmbed],
-                    components: [] // Clears buttons to lock the finished state
+                    components: [] // Safely lock interactive elements
                 });
 
                 collector.stop();
             }
         });
 
-        // Safety: If the user leaves the game or goes AFK mid-journey
+        // Safe Reset on AFK
         collector.on('end', async (_, reason) => {
             if (reason !== 'user' && reason !== 'messageDelete') {
-                const freshUser = await getEconomyData(userId);
+                const freshUser = await getEconomyData(client, guildId, userId);
                 
-                // Release player lock so they aren't stuck on "on_expedition" forever
-                if (freshUser.status === 'on_expedition') {
-                    freshUser.status = 'idle';
-                    freshUser.expedition = null;
-                    await setEconomyData(userId, freshUser);
+                // Unlock player's state if they vanished mid-game
+                if (freshUser.activeCaravan) {
+                    freshUser.activeCaravan = null;
+                    await setEconomyData(client, guildId, userId, freshUser);
                 }
 
-                // Disable UI buttons on the message
                 try {
                     const disabledRow = new ActionRowBuilder().addComponents(
                         new ButtonBuilder()
@@ -208,9 +224,9 @@ export default {
                     );
                     await interaction.editReply({ components: [disabledRow] });
                 } catch {
-                    // Ignore errors if message was deleted
+                    // Fail silently if message deleted
                 }
             }
         });
-    }
+    }, { command: 'caravan' })
 };
