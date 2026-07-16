@@ -53,7 +53,7 @@ export default {
                 );
             }
 
-            // Deduct cost and clear state
+            // Deduct cost and clear state (No cooldown applied for paying a rescue fee)
             userData.wallet -= rescueCost;
             userData.activeCaravan = null;
             await setEconomyData(client, guildId, userId, userData);
@@ -77,20 +77,37 @@ export default {
             const userData = await getEconomyData(client, guildId, userId);
             const inventory = userData.inventory || {};
             const hasCamelArmor = inventory["camel_armor"] > 0;
+            const now = Date.now();
 
             let lostCaravanNotice = ""; // Container for the sandstorm flavor text
 
+            // --- 1. COOLDOWN CHECK ---
+            if (userData.caravanCooldown && now < userData.caravanCooldown) {
+                const timeLeftMs = userData.caravanCooldown - now;
+                const minutes = Math.floor(timeLeftMs / 60000);
+                const seconds = Math.floor((timeLeftMs % 60000) / 1000);
+                
+                const countdownString = minutes > 0 
+                    ? `**${minutes}m ${seconds}s**` 
+                    : `**${seconds}s**`;
+
+                throw createError(
+                    "Crew is Resting",
+                    ErrorTypes.GAME_RULE,
+                    `🐫 **Your caravan crew is currently resting in Damascus!**\n\nThey need time to rest their camels, repair their packs, and replenish their water skins before embarking on another grueling trek.\n\nReady to depart again in: ${countdownString}`
+                );
+            }
+
+            // --- 2. ACTIVE CARAVAN CHECK (SELF-HEALING) ---
             if (userData.activeCaravan) {
-                const now = Date.now();
                 if (userData.activeCaravan.expiresAt && now > userData.activeCaravan.expiresAt) {
-                    // --- SELF-HEALING WITH FLAVOR ---
-                    // Caravan timed out. Clear state and prepare the sandstorm story notification!
+                    // Caravan timed out. Clear state and show the sandstorm story notification.
+                    // (Note: No cooldown is applied here so they can retry immediately after a loss)
                     lostCaravanNotice = "🌪️ **Expedition Lost!**\n*It looks like your previous caravan got lost in a fierce sandstorm! Your merchants had to abandon their cargo in the dunes to survive, returning to the city empty-handed. But a new day dawns...*\n\n";
                     
                     userData.activeCaravan = null;
                     await setEconomyData(client, guildId, userId, userData);
                 } else {
-                    // --- LIVE COUNTDOWN TIMER ---
                     // Still active and fresh. Calculate the remaining time left on the clock.
                     const timeLeftMs = userData.activeCaravan.expiresAt - now;
                     const minutes = Math.floor(timeLeftMs / 60000);
@@ -254,6 +271,10 @@ export default {
 
                     freshUser.wallet += cargoValue; 
                     freshUser.activeCaravan = null; // Clear active state successfully
+                    
+                    // --- APPLY 30-MINUTE COOLDOWN ON SUCCESSFUL COMPLETION ---
+                    freshUser.caravanCooldown = Date.now() + 30 * 60 * 1000; 
+
                     await setEconomyData(client, guildId, userId, freshUser);
 
                     const marketEmbed = createEmbed({
@@ -280,9 +301,6 @@ export default {
             // Handle Collector End
             collector.on('end', async (_, reason) => {
                 if (reason !== 'user' && reason !== 'messageDelete') {
-                    // Do not clear database lock here anymore.
-                    // This allows Option 1 (self-healing timer) and Option 2 (rescue command) 
-                    // to completely manage orphaned states!
                     try {
                         const disabledRow = new ActionRowBuilder().addComponents(
                             new ButtonBuilder()
