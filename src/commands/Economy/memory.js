@@ -119,9 +119,11 @@ export default {
         // Generate native relative discord timestamp so client counts down live
         const expiryTimestamp = Math.floor((now + GAME_TIMEOUT) / 1000);
 
-        // Helper: Build the custom layout dynamic grid
+        // Helper: Build the custom layout dynamic grid + control row
         function buildGrid(disableAll = false, tempRevealIndex = null) {
             const rows = [];
+            
+            // Build card grid rows
             for (let r = 0; r < levelConfig.rows; r++) {
                 const row = new ActionRowBuilder();
                 for (let c = 0; c < levelConfig.cols; c++) {
@@ -150,6 +152,17 @@ export default {
                 }
                 rows.push(row);
             }
+
+            // Append control row with the "Quit Game" option
+            const controlRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder()
+                    .setCustomId('quit_game')
+                    .setLabel('🏳️ Quit Game')
+                    .setStyle(ButtonStyle.Danger)
+                    .setDisabled(disableAll || isProcessing) // Lock when matching fails are showcasing
+            );
+            rows.push(controlRow);
+
             return rows;
         }
 
@@ -197,6 +210,13 @@ export default {
             }
 
             await btnInteraction.deferUpdate();
+
+            // Handle immediate quit
+            if (btnInteraction.customId === 'quit_game') {
+                collector.stop('quit');
+                return;
+            }
+
             const clickedIndex = parseInt(btnInteraction.customId.split('_')[1]);
 
             // First card selection
@@ -304,6 +324,16 @@ export default {
                 );
 
                 await InteractionHelper.safeEditReply(interaction, { embeds: [winEmbed], components: disabledGrid });
+
+            } else if (reason === 'quit') {
+                logger.info(`[ECONOMY] Memory game forfeited early by user`, { userId, guildId });
+
+                const quitEmbed = warningEmbed(
+                    "🏳️ Game Forfeited",
+                    `You chose to end the match early. Better luck next time!`
+                );
+
+                await InteractionHelper.safeEditReply(interaction, { embeds: [quitEmbed], components: disabledGrid });
 
             } else {
                 // Timeout / Aborted
