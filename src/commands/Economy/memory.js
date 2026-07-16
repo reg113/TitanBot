@@ -16,7 +16,7 @@ const GAME_COOLDOWN = 30 * 1000; // 30 seconds between games
 const GAME_TIMEOUT = 180000; // 3-minute hard limit for game completion
 
 // Up to 10 pairs needed for the 4x5 Hard level grid
-const EMOJI_POOL = ['🍎', '🦊', '🚀', '💎', '🍕', '🎸', '👾', '👑', '🐼', '🎈'];
+const EMOJI_POOL = ['🍎', '🍕', '🚀', '💎', '🍕', '🍊', '👾', '👑', '⚽', '🎈'];
 
 // Global memory safety track (costs almost 0 RAM/CPU)
 const activeGames = new Set();
