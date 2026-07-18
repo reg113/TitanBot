@@ -226,6 +226,7 @@ export default {
                 const freshUserData = await getEconomyData(client, guildId, userId);
                 if (freshUserData) {
                     freshUserData.wallet = (freshUserData.wallet || 0) + totalGoldEarned;
+                    // FIX: Commit the earnings update back to the database!
                     await setEconomyData(client, guildId, userId, freshUserData);
                 }
 
