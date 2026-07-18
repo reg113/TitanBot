@@ -62,6 +62,18 @@ roleId: null,
         }
     },
     {
+        id: 'skull_react',
+        name: '💀 Skull Reaction',
+        price: 2500,
+        description: 'Reacts to a specific target message with a skull emoji! Consumed upon use.',
+        type: 'consumable',
+        cooldown: 10 * 60 * 1000, // 10 minutes in milliseconds
+        maxQuantity: 10,
+        effect: {
+            type: 'message_reaction'
+        }
+    },
+    {
         id: 'fishing_rod',
         name: '🎣 Fishing Rod',
         price: 5000,
