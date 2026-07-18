@@ -1,4 +1,11 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { 
+    SlashCommandBuilder, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    StringSelectMenuBuilder, 
+    ButtonStyle, 
+    ComponentType 
+} from 'discord.js';
 import { createEmbed, errorEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/embeds.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -7,7 +14,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('connect4')
-        .setDescription('Start an interactive multiplayer Connect 4 game!'),
+        .setDescription('Start a multiplayer Connect 4 match using interactive buttons and menus!'),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
@@ -15,9 +22,7 @@ export default {
 
         const host = interaction.user;
         const guildId = interaction.guildId;
-        const channel = interaction.channel;
 
-        // Color configurations for up to 4 players
         const PLAYER_CONFIGS = [
             { emoji: ':red_circle:', name: 'Red' },
             { emoji: ':yellow_circle:', name: 'Yellow' },
@@ -25,113 +30,114 @@ export default {
             { emoji: ':green_circle:', name: 'Green' }
         ];
 
-        // Track active players (Host is locked in as Player 1)
         let players = [
             { id: host.id, username: host.username, user: host, emoji: PLAYER_CONFIGS[0].emoji }
         ];
 
-        logger.info(`[GAMES] Connect 4 reaction-lobby initiated by ${host.id}`, { guildId });
+        logger.info(`[GAMES] Interactive Connect 4 lobby initiated by ${host.id}`, { guildId });
 
-        // --- PHASE 1: REACTION LOBBY ---
+        // --- PHASE 1: COMPONENT-DRIVEN LOBBY ---
         function getLobbyEmbed() {
             const playerList = players.map((p, index) => `${index + 1}. ${p.emoji} **${p.username}**`).join('\n');
             return infoEmbed(
                 "🎮 Connect 4 Multiplayer Lobby",
                 `**Host:** ${host.toString()}\n\n` +
                 `### Current Players (${players.length}/4):\n${playerList}\n\n` +
-                `👉 React with 🎮 to **Join** or **Leave** the lobby!\n` +
-                `👉 **${host.username}**, type **\`start\`** in chat to launch the match.`
-            ).setFooter({ text: "Lobby expires in 60 seconds." });
+                `👉 Click the buttons below to manage your lobby status.`
+            ).setFooter({ text: "Lobby will close automatically after 60 seconds of inactivity." });
         }
 
-        // Send the lobby invitation frame
+        function getLobbyControls() {
+            return new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('c4_lobby_join').setLabel('Join').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId('c4_lobby_leave').setLabel('Leave').setStyle(ButtonStyle.Secondary),
+                new ButtonBuilder().setCustomId('c4_lobby_start').setLabel('Start Game').setStyle(ButtonStyle.Success)
+            );
+        }
+
         await InteractionHelper.safeEditReply(interaction, {
-            embeds: [getLobbyEmbed()]
+            embeds: [getLobbyEmbed()],
+            components: [getLobbyControls()]
         });
 
-        const replyMessage = await interaction.fetchReply();
-        await replyMessage.react('🎮');
-
-        // Listen for additions and removals of the lobby reaction
-        const reactionCollector = replyMessage.createReactionCollector({
-            filter: (reaction, user) => reaction.emoji.name === '🎮' && !user.bot,
-            time: 60000,
-            dispose: true // Required to fire the 'remove' event
-        });
-
-        const textCollector = channel.createMessageCollector({
-            filter: m => m.author.id === host.id && m.content.toLowerCase().trim() === 'start',
+        const lobbyResponse = await interaction.fetchReply();
+        const lobbyCollector = lobbyResponse.createMessageComponentCollector({
+            componentType: ComponentType.Button,
             time: 60000
         });
 
         let gameStarted = false;
 
-        reactionCollector.on('collect', async (reaction, user) => {
-            if (user.id === host.id) return; // Host is automatically in
-            if (players.some(p => p.id === user.id)) return;
+        lobbyCollector.on('collect', async (btnCtx) => {
+            const customId = btnCtx.customId;
 
-            if (players.length >= 4) {
-                // Remove extra reactions if lobby is full
-                try { await reaction.users.remove(user.id); } catch (e) {}
-                return;
-            }
+            if (customId === 'c4_lobby_join') {
+                if (players.some(p => p.id === btnCtx.user.id)) {
+                    return btnCtx.reply({ content: "🧠 You are already in the lobby!", ephemeral: true });
+                }
+                if (players.length >= 4) {
+                    return btnCtx.reply({ content: "❌ This lobby is full! Max 4 players.", ephemeral: true });
+                }
 
-            players.push({
-                id: user.id,
-                username: user.username,
-                user: user,
-                emoji: PLAYER_CONFIGS[players.length].emoji
-            });
-
-            await InteractionHelper.safeEditReply(interaction, { embeds: [getLobbyEmbed()] });
-        });
-
-        reactionCollector.on('remove', async (reaction, user) => {
-            if (user.id === host.id) return;
-            
-            const index = players.findIndex(p => p.id === user.id);
-            if (index !== -1) {
-                players.splice(index, 1);
-                
-                // Re-sync player color emojis based on new order positions
-                players.forEach((p, idx) => {
-                    p.emoji = PLAYER_CONFIGS[idx].emoji;
+                players.push({
+                    id: btnCtx.user.id,
+                    username: btnCtx.user.username,
+                    user: btnCtx.user,
+                    emoji: PLAYER_CONFIGS[players.length].emoji
                 });
 
+                await btnCtx.deferUpdate();
                 await InteractionHelper.safeEditReply(interaction, { embeds: [getLobbyEmbed()] });
             }
-        });
 
-        textCollector.on('collect', async (msg) => {
-            if (players.length < 2) {
-                const warn = await msg.reply("You need at least 2 players to start!");
-                setTimeout(() => { warn.delete().catch(() => {}); msg.delete().catch(() => {}); }, 4000);
-                return;
+            if (customId === 'c4_lobby_leave') {
+                if (btnCtx.user.id === host.id) {
+                    return btnCtx.reply({ content: "👑 You are the host! You can't leave your own lobby. Use standard timeout or dismiss the command if you wish to cancel.", ephemeral: true });
+                }
+                
+                const index = players.findIndex(p => p.id === btnCtx.user.id);
+                if (index === -1) {
+                    return btnCtx.reply({ content: "You aren't even in this lobby yet!", ephemeral: true });
+                }
+
+                players.splice(index, 1);
+                players.forEach((p, idx) => p.emoji = PLAYER_CONFIGS[idx].emoji); // Recalibrate colors
+
+                await btnCtx.deferUpdate();
+                await InteractionHelper.safeEditReply(interaction, { embeds: [getLobbyEmbed()] });
             }
-            try { await msg.delete(); } catch (e) {}
-            gameStarted = true;
-            reactionCollector.stop();
-            textCollector.stop();
+
+            if (customId === 'c4_lobby_start') {
+                if (btnCtx.user.id !== host.id) {
+                    return btnCtx.reply({ content: "🛡️ Only the host can start the game match!", ephemeral: true });
+                }
+                if (players.length < 2) {
+                    return btnCtx.reply({ content: "⚠️ You need at least 2 players to start a match!", ephemeral: true });
+                }
+
+                gameStarted = true;
+                await btnCtx.deferUpdate();
+                lobbyCollector.stop();
+            }
         });
 
-        textCollector.on('end', async () => {
+        lobbyCollector.on('end', async () => {
             if (!gameStarted) {
                 await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [warningEmbed("Lobby Closed", "The game timed out or lacked enough players to start.")]
+                    embeds: [warningEmbed("Lobby Closed", "The game session timed out or was abandoned.")],
+                    components: []
                 });
                 return;
             }
 
-            // Remove the layout invitation embed and transition completely to live message updates
-            await interaction.deleteReply().catch(() => {});
+            // Move seamlessly to active gameplay inside the exact same message frame
             await runActiveGame();
         });
 
-        // --- PHASE 2: ACTIVE GAME ENGINE ---
+        // --- PHASE 2: COMPONENT ACTIVE GAMEPLAY LOOP ---
         async function runActiveGame() {
             const board = Array(6).fill(null).map(() => Array(7).fill(':white_circle:'));
             let turnIndex = 0;
-            let lastGameMessage = null;
 
             function renderBoardString() {
                 return board.map(row => row.join(' ')).join('\n');
@@ -139,132 +145,156 @@ export default {
 
             function getGameEmbed(statusOverlay = "") {
                 const current = players[turnIndex];
-                const alignmentMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |  ');
-                const turnNotice = statusOverlay || `Current Turn: ${current.user.toString()} ${current.emoji}\n👉 Type a column (**1-7**) to drop, or type **\`leave\`** to forfeit.`;
+                const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |  ');
+                const mainPrompt = statusOverlay || `👉 **Turn:** ${current.user.toString()} ${current.emoji}\nSelect a column from the dropdown menu below to play!`;
 
                 return infoEmbed(
-                    `📊 Connect 4: Tactical Arena`,
-                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n**Key:** ${alignmentMap}\n\n${turnNotice}`
+                    `📊 Connect 4 Arena`,
+                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n**Key:** ${keyMap}\n\n${mainPrompt}`
                 );
             }
 
-            // Centralized rendering utility to prevent text flood
-            async function refreshGameBoard(statusText = "") {
-                if (lastGameMessage) {
-                    try { await lastGameMessage.delete(); } catch (e) {}
-                }
-                lastGameMessage = await channel.send({
-                    embeds: [getGameEmbed(statusText)]
-                });
+            function getGameComponents() {
+                // Generate drop menu columns selection options
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId('c4_game_drop')
+                    .setPlaceholder('Choose a column to drop your piece...')
+                    .addOptions(
+                        Array(7).fill(null).map((_, i) => ({
+                            label: `Column ${i + 1}`,
+                            value: `${i}`,
+                            description: board[0][i] !== ':white_circle:' ? '🚫 FULL' : `Drop into column ${i + 1}`
+                        }))
+                    );
+
+                const forfeitButton = new ButtonBuilder()
+                    .setCustomId('c4_game_leave')
+                    .setLabel('🏳️ Forfeit / Leave Match')
+                    .setStyle(ButtonStyle.Danger);
+
+                return [
+                    new ActionRowBuilder().addComponents(selectMenu),
+                    new ActionRowBuilder().addComponents(forfeitButton)
+                ];
             }
 
-            // Initial frame deploy
-            await refreshGameBoard();
-
-            const gameCollector = channel.createMessageCollector({
-                filter: m => {
-                    const activeIds = players.map(p => p.id);
-                    const validationRegex = /^[1-7]$/;
-                    const isLeaveCommand = m.content.toLowerCase().trim() === 'leave';
-                    return activeIds.includes(m.author.id) && (validationRegex.test(m.content.trim()) || isLeaveCommand);
-                },
-                time: 600000 // 10 minute total matching threshold
+            // Update initial state viewport frame
+            await InteractionHelper.safeEditReply(interaction, {
+                embeds: [getGameEmbed()],
+                components: getGameComponents()
             });
 
-            gameCollector.on('collect', async (msg) => {
-                const input = msg.content.toLowerCase().trim();
-                const currentPlayer = players[turnIndex];
+            const activePlayerIds = players.map(p => p.id);
+            const gameCollector = lobbyResponse.createMessageComponentCollector({
+                time: 600000 // 10 minute absolute timeout limits
+            });
 
-                // 1. Handle Mid-game Forfeiting
-                if (input === 'leave') {
-                    try { await msg.delete(); } catch (e) {}
-                    
-                    const leavingPlayer = players.find(p => p.id === msg.author.id);
-                    const leavingIndex = players.findIndex(p => p.id === msg.author.id);
-                    
+            gameCollector.on('collect', async (compCtx) => {
+                // Ensure only connected participants can access interactive payloads
+                if (!activePlayerIds.includes(compCtx.user.id)) {
+                    return compCtx.reply({ content: "❌ You are not a player in this active match!", ephemeral: true });
+                }
+
+                // 1. Handle Mid-Game Forfeiting Updates
+                if (compCtx.customId === 'c4_game_leave') {
+                    await compCtx.deferUpdate();
+
+                    const leavingPlayer = players.find(p => p.id === compCtx.user.id);
+                    const leavingIndex = players.findIndex(p => p.id === compCtx.user.id);
+
                     players.splice(leavingIndex, 1);
-                    await channel.send(`👋 **${leavingPlayer.username}** has left the match.`);
-
-                    // Terminate match if remaining players drop below minimum threshold
+                    
+                    // Game terminates instantly if under 2 survivors remain
                     if (players.length < 2) {
                         gameCollector.stop('forfeit_victory');
                         return;
                     }
 
-                    // Adjust index positions so turns don't break/skip
+                    // Keep player boundary safe after mutations
                     if (turnIndex >= players.length) {
                         turnIndex = 0;
                     }
 
-                    await refreshGameBoard();
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [getGameEmbed(`🔔 **${leavingPlayer.username}** has abandoned the battle.`)],
+                        components: getGameComponents()
+                    });
                     return;
                 }
 
-                // 2. Standard Column Action Turn Guard
-                if (msg.author.id !== currentPlayer.id) return;
+                // 2. Handle Token Drops
+                if (compCtx.customId === 'c4_game_drop') {
+                    const currentPlayer = players[turnIndex];
 
-                const colIndex = parseInt(msg.content.trim()) - 1;
-                try { await msg.delete(); } catch (e) {}
-
-                // Column saturation check
-                if (board[0][colIndex] !== ':white_circle:') {
-                    await refreshGameBoard(`⚠️ **Column ${colIndex + 1} is full!** Choose another column, ${currentPlayer.user.toString()}.`);
-                    return;
-                }
-
-                // Gravitational drop deployment logic
-                for (let r = 5; r >= 0; r--) {
-                    if (board[r][colIndex] === ':white_circle:') {
-                        board[r][colIndex] = currentPlayer.emoji;
-                        break;
+                    if (compCtx.user.id !== currentPlayer.id) {
+                        return compCtx.reply({ content: `⏳ Hold on! It is currently ${currentPlayer.username}'s turn.`, ephemeral: true });
                     }
-                }
 
-                // Validate endgame checks
-                if (checkWin(currentPlayer.emoji)) {
-                    gameCollector.stop('win');
-                    return;
-                }
+                    const colIndex = parseInt(compCtx.values[0]);
 
-                if (board[0].every(cell => cell !== ':white_circle:')) {
-                    gameCollector.stop('draw');
-                    return;
-                }
+                    if (board[0][colIndex] !== ':white_circle:') {
+                        return compCtx.reply({ content: "🚫 That column is completely full! Choose another column.", ephemeral: true });
+                    }
 
-                // Cycle turn wheel array pointers
-                turnIndex = (turnIndex + 1) % players.length;
-                await refreshGameBoard();
+                    await compCtx.deferUpdate();
+
+                    // Gravity drop configuration lookup
+                    for (let r = 5; r >= 0; r--) {
+                        if (board[r][colIndex] === ':white_circle:') {
+                            board[r][colIndex] = currentPlayer.emoji;
+                            break;
+                        }
+                    }
+
+                    // Scan terminal endstates
+                    if (checkWin(currentPlayer.emoji)) {
+                        gameCollector.stop('win');
+                        return;
+                    }
+
+                    if (board[0].every(cell => cell !== ':white_circle:')) {
+                        gameCollector.stop('draw');
+                        return;
+                    }
+
+                    // Cycle turning values smoothly
+                    turnIndex = (turnIndex + 1) % players.length;
+
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [getGameEmbed()],
+                        components: getGameComponents()
+                    });
+                }
             });
 
             gameCollector.on('end', async (_, endReason) => {
-                // Delete the last interactive tracking frame to leave a clean permanent result frame
-                if (lastGameMessage) {
-                    try { await lastGameMessage.delete(); } catch (e) {}
-                }
-
                 if (endReason === 'win') {
                     const winner = players[turnIndex];
-                    await channel.send({
-                        embeds: [successEmbed("🏆 Match Decided!", `${renderBoardString()}\n\n🎉 **${winner.username}** (${winner.emoji}) successfully aligned 4 and won the match!`)]
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [successEmbed("🏆 Match Decided!", `${renderBoardString()}\n\n🎉 Congratulations **${winner.username}** (${winner.emoji}), you aligned 4 and claimed victory!`)],
+                        components: []
                     });
                 } else if (endReason === 'forfeit_victory') {
                     const survivor = players[0];
-                    await channel.send({
-                        embeds: [successEmbed("🏆 Victory by Forfeit", `${renderBoardString()}\n\n🎉 Everyone else left the arena! **${survivor.username}** (${survivor.emoji}) is the last player standing!`)]
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [successEmbed("🏆 Victory by Forfeit", `${renderBoardString()}\n\n🎉 Everyone else retreated! **${survivor.username}** (${survivor.emoji}) is the champion!`)],
+                        components: []
                     });
                 } else if (endReason === 'draw') {
-                    await channel.send({
-                        embeds: [infoEmbed("🤝 Game Over", `${renderBoardString()}\n\nThe grid is completely jammed up. The match ends in a draw!`)]
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [infoEmbed("🤝 Complete Tie!", `${renderBoardString()}\n\nThe grid is locked out! The game ends in a draw.`)],
+                        components: []
                     });
                 } else {
-                    await channel.send({
-                        embeds: [warningEmbed("⌛ Session Expired", `${renderBoardString()}\n\nThe match was terminated automatically due to excessive inactivity.`)]
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [warningEmbed("⌛ Session Expired", "The match timed out due to total inactivity.")],
+                        components: []
                     });
                 }
             });
         }
 
-        // --- PHASE 3: GRID EVALUATION ALGORITHM ---
+        // --- PHASE 3: GRID EVALUATION MATRIX ---
         function checkWin(piece) {
             for (let r = 0; r < 6; r++) { // Horizontal
                 for (let c = 0; c < 4; c++) {
