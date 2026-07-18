@@ -7,212 +7,248 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('connect4')
-        .setDescription('Challenge another member to a game of Connect 4 using text inputs!')
-        .addUserOption(option =>
-            option.setName('opponent')
-                .setDescription('The user you want to challenge')
-                .setRequired(true)
-        ),
+        .setDescription('Start a multiplayer Connect 4 lobby for up to 4 players!'),
 
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
         if (!deferred) return;
 
-        const challenger = interaction.user;
-        const opponent = interaction.options.getUser('opponent');
+        const host = interaction.user;
         const guildId = interaction.guildId;
+        const channel = interaction.channel;
 
-        // 1. Core Validations
-        if (opponent.id === challenger.id) {
-            throw createError(
-                "Self challenge restriction",
-                ErrorTypes.VALIDATION,
-                "You cannot play Connect 4 against yourself! Tag a friend instead.",
-                { userId: challenger.id }
-            );
+        // Player configuration mapping
+        const PLAYER_CONFIGS = [
+            { emoji: ':red_circle:', name: 'Red' },
+            { emoji: ':yellow_circle:', name: 'Yellow' },
+            { emoji: ':blue_circle:', name: 'Blue' },
+            { emoji: ':green_circle:', name: 'Green' }
+        ];
+
+        // Track active players in the lobby
+        let players = [
+            { id: host.id, username: host.username, user: host, emoji: PLAYER_CONFIGS[0].emoji }
+        ];
+
+        logger.info(`[GAMES] Multiplayer Connect 4 lobby created by ${host.id}`, { guildId });
+
+        // 1. Phase 1: The Open Lobby Phase
+        function getLobbyEmbed() {
+            const playerList = players.map((p, index) => `${index + 1}. ${p.emoji} **${p.username}**`).join('\n');
+            return infoEmbed(
+                "🎮 Connect 4 Multiplayer Lobby",
+                `**Host:** ${host.toString()}\n\n` +
+                `### Current Players (${players.length}/4):\n${playerList}\n\n` +
+                `👉 Other players, type **\`join\`** in chat to secure a spot!\n` +
+                `👉 **${host.username}**, type **\`start\`** to launch the match early.`
+            ).setFooter({ text: "Lobby closes automatically in 45 seconds if not started." });
         }
-
-        if (opponent.bot) {
-            throw createError(
-                "Bot challenge restriction",
-                ErrorTypes.VALIDATION,
-                "Bots cannot play Connect 4. Challenge a human!",
-                { userId: challenger.id, targetBotId: opponent.id }
-            );
-        }
-
-        logger.info(`[GAMES] Connect 4 text-challenge issued by ${challenger.id} to ${opponent.id}`, { guildId });
-
-        // 2. Invitation Phase via Text Reactions / Text Confirmation
-        const inviteEmbed = infoEmbed(
-            "🔴 Connect 4 Challenge! 🟡",
-            `**${challenger.username}** has challenged **${opponent.toString()}** to a match of Connect 4!\n\n👉 **${opponent.username}**, type **\`accept\`** in chat to play, or **\`decline\`** to refuse.`
-        ).setFooter({ text: "Invitation expires in 60 seconds." });
 
         await InteractionHelper.safeEditReply(interaction, {
-            content: opponent.toString(),
-            embeds: [inviteEmbed],
-            components: [] // Explicitly stripped of buttons
+            embeds: [getLobbyEmbed()]
         });
 
-        // Set up a collector in the channel to watch for the invite response
-        const channel = interaction.channel;
-        const inviteCollector = channel.createMessageCollector({
-            filter: m => m.author.id === opponent.id && ['accept', 'decline'].includes(m.content.toLowerCase()),
-            time: 60000,
-            max: 1
+        const lobbyCollector = channel.createMessageCollector({
+            filter: m => !m.author.bot && ['join', 'start'].includes(m.content.toLowerCase().trim()),
+            time: 45000
         });
 
-        let gameActive = false;
-        const board = Array(6).fill(null).map(() => Array(7).fill('⚪'));
-        const P1_EMOJI = '🔴';
-        const P2_EMOJI = '🟡';
-        let currentTurn = challenger;
+        let gameStarted = false;
 
-        inviteCollector.on('collect', async (msg) => {
-            if (msg.content.toLowerCase() === 'accept') {
-                gameActive = true;
-                try { await msg.delete(); } catch (e) { /* Ignore if missing permissions */ }
+        lobbyCollector.on('collect', async (msg) => {
+            const input = msg.content.toLowerCase().trim();
+
+            // Handle joining players
+            if (input === 'join') {
+                if (players.some(p => p.id === msg.author.id)) {
+                    return; // Player is already in the lobby
+                }
+                if (players.length >= 4) {
+                    try { await msg.reply({ content: "Sorry, this game lobby is completely full!", ephemeral: true }); } catch (e) {}
+                    return;
+                }
+
+                // Add player with next available color layout config
+                players.push({
+                    id: msg.author.id,
+                    username: msg.author.username,
+                    user: msg.author,
+                    emoji: PLAYER_CONFIGS[players.length].emoji
+                });
+
+                try { await msg.delete(); } catch (e) {}
+                
+                await InteractionHelper.safeEditReply(interaction, {
+                    embeds: [getLobbyEmbed()]
+                });
+
+                // Auto-start game if max capacity is filled
+                if (players.length === 4) {
+                    gameStarted = true;
+                    lobbyCollector.stop('filled');
+                }
+            }
+
+            // Handle host starting early
+            if (input === 'start') {
+                if (msg.author.id !== host.id) {
+                    return; // Ignore start command if not sent by host
+                }
+                if (players.length < 2) {
+                    try { 
+                        const failMsg = await msg.reply("You need at least 2 players to start the game!");
+                        setTimeout(() => failMsg.delete().catch(() => {}), 4000);
+                    } catch (e) {}
+                    return;
+                }
+
+                try { await msg.delete(); } catch (e) {}
+                gameStarted = true;
+                lobbyCollector.stop('host_start');
             }
         });
 
-        inviteCollector.on('end', async (collected) => {
-            const firstMsg = collected.first();
-            
-            if (!gameActive || (firstMsg && firstMsg.content.toLowerCase() === 'decline')) {
+        lobbyCollector.on('end', async () => {
+            if (!gameStarted) {
                 await InteractionHelper.safeEditReply(interaction, {
-                    content: ' ',
-                    embeds: [warningEmbed("Challenge Declined", `${opponent.username} decided not to play this time.`)],
-                    components: []
+                    embeds: [warningEmbed("Lobby Cancelled", "The Connect 4 game timed out or lacked enough players to start.")]
                 });
                 return;
             }
 
-            // Run the active game loop if accepted
-            await runGameLoop();
+            // Move cleanly to Phase 2: Active Gameplay
+            await runMultiplayerGame();
         });
 
-        // 3. Active Gameplay Loop via Text Inputs
-        async function runGameLoop() {
+        // 2. Phase 2: Active Game Loop Engine
+        async function runMultiplayerGame() {
+            const board = Array(6).fill(null).map(() => Array(7).fill(':white_circle:'));
+            let turnIndex = 0;
+            
             function renderBoardString() {
                 return board.map(row => row.join(' ')).join('\n');
             }
 
-            function getGameEmbed(extraText = "") {
-                const turnStatus = `Current Turn: ${currentTurn.toString()} ${currentTurn.id === challenger.id ? P1_EMOJI : P2_EMOJI}\n👉 Type a column number (**1-7**) to drop your piece!`;
+            function getGameEmbed(statusOverlay = "") {
+                const current = players[turnIndex];
+                const alignmentMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |  ');
+                
+                const turnNotice = statusOverlay || `Current Turn: ${current.user.toString()} ${current.emoji}\n👉 Type a column number (**1-7**) to drop your token!`;
+                
                 return infoEmbed(
-                    `📊 Connect 4: ${challenger.username} vs ${opponent.username}`,
-                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n${extraText || turnStatus}`
+                    `📊 Connect 4: Multiplayer Showdown`,
+                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n` +
+                    `**Key:** ${alignmentMap}\n\n${turnNotice}`
                 );
             }
 
-            // Send initial board
             await InteractionHelper.safeEditReply(interaction, {
-                content: `🎮 Match Started!`,
+                content: `🎮 The match has officially started! Order: ${players.map(p => p.username).join(' ➔ ')}`,
                 embeds: [getGameEmbed()]
             });
 
-            // Collect messages that are numbers 1-7 from either active player
+            // Listen only to active players entering digits 1-7
+            const activePlayerIds = players.map(p => p.id);
             const gameCollector = channel.createMessageCollector({
-                filter: m => [challenger.id, opponent.id].includes(m.author.id) && /^[1-7]$/.test(m.content.trim()),
-                time: 300000 // 5-minute hard limit total match time
+                filter: m => activePlayerIds.includes(m.author.id) && /^[1-7]$/.test(m.content.trim()),
+                time: 600000 // 10-minute maximum entire game lifecycle buffer
             });
 
             gameCollector.on('collect', async (msg) => {
-                // Ensure it's the correct user's turn
-                if (msg.author.id !== currentTurn.id) {
-                    return; // Ignore inputs out of turn silently, or you can send a brief warning
+                const currentPlayer = players[turnIndex];
+
+                // Guard check: Ensure it is actually this user's turn
+                if (msg.author.id !== currentPlayer.id) {
+                    return; 
                 }
 
                 const colIndex = parseInt(msg.content.trim()) - 1;
-                const currentEmoji = currentTurn.id === challenger.id ? P1_EMOJI : P2_EMOJI;
-
-                // Attempt to clean up the player's text entry to keep chat neat
                 try { await msg.delete(); } catch (e) {}
 
-                // Check if column is full
-                if (board[0][colIndex] !== '⚪') {
-                    // Re-render with a quick warning embedded
+                // Column saturation check
+                if (board[0][colIndex] !== ':white_circle:') {
                     await InteractionHelper.safeEditReply(interaction, {
-                        embeds: [getGameEmbed(`⚠️ **Column ${colIndex + 1} is full!** Choose another column, ${currentTurn.toString()}.`)]
+                        embeds: [getGameEmbed(`⚠️ **Column ${colIndex + 1} is full!** Try a different slot, ${currentPlayer.user.toString()}.`)]
                     });
                     return;
                 }
 
-                // Drop piece into the lowest open row index
+                // Place the token in the lowest free index point
                 for (let r = 5; r >= 0; r--) {
-                    if (board[r][colIndex] === '⚪') {
-                        board[r][colIndex] = currentEmoji;
+                    if (board[r][colIndex] === ':white_circle:') {
+                        board[r][colIndex] = currentPlayer.emoji;
                         break;
                     }
                 }
 
-                // Check for wins
-                if (checkWin(currentEmoji)) {
+                // Win conditions validation
+                if (checkWin(currentPlayer.emoji)) {
                     gameCollector.stop('win');
                     return;
                 }
 
-                // Check for a tie match
-                if (board[0].every(cell => cell !== '⚪')) {
+                // Draw conditions validation (board full)
+                if (board[0].every(cell => cell !== ':white_circle:')) {
                     gameCollector.stop('draw');
                     return;
                 }
 
-                // Flip turn state
-                currentTurn = currentTurn.id === challenger.id ? opponent : challenger;
+                // Move turn index to the next player down the line
+                turnIndex = (turnIndex + 1) % players.length;
 
-                // Update viewport message
                 await InteractionHelper.safeEditReply(interaction, {
+                    content: ' ',
                     embeds: [getGameEmbed()]
                 });
             });
 
             gameCollector.on('end', async (_, endReason) => {
+                const finalActivePlayer = players[turnIndex];
+
                 if (endReason === 'win') {
                     const winEmbed = successEmbed(
                         "🏆 Connect 4 Victory!",
-                        `${renderBoardString()}\n\n🎉 **${currentTurn.username}** aligned 4 pieces and won the match!`
+                        `${renderBoardString()}\n\n🎉 **${finalActivePlayer.username}** (${finalActivePlayer.emoji}) managed to line up 4 and won the match!`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [winEmbed] });
-                    logger.info(`[GAMES] Connect 4 text-match finished. Winner: ${currentTurn.id}`, { guildId });
+                    await InteractionHelper.safeEditReply(interaction, { embeds: [winEmbed] });
+                    logger.info(`[GAMES] Multiplayer Connect 4 won by ${finalActivePlayer.id}`, { guildId });
                 } else if (endReason === 'draw') {
                     const drawEmbed = infoEmbed(
-                        "🤝 Stalemate!",
-                        `${renderBoardString()}\n\nThe board is full! The game ends in a tie.`
+                        "🤝 Stagnant Grid!",
+                        `${renderBoardString()}\n\nThe grid is completely packed out with tokens! The game ends in a multi-way tie.`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [drawEmbed] });
+                    await InteractionHelper.safeEditReply(interaction, { embeds: [drawEmbed] });
                 } else {
                     const timeoutEmbed = warningEmbed(
-                        "⌛ Match Abandoned",
-                        `${renderBoardString()}\n\nThe game timed out because players stopped typing columns.`
+                        "⌛ Match Disbanded",
+                        `${renderBoardString()}\n\nThe session timed out due to total player inactivity.`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [timeoutEmbed] });
+                    await InteractionHelper.safeEditReply(interaction, { embeds: [timeoutEmbed] });
                 }
             });
         }
 
-        // 4. Matrix Evaluation (Win Scan Algorithm)
+        // 3. Matrix Verification Evaluation
         function checkWin(piece) {
-            // Horizontal checking
+            // Horizontal rows evaluation
             for (let r = 0; r < 6; r++) {
                 for (let c = 0; c < 4; c++) {
                     if (board[r][c] === piece && board[r][c+1] === piece && board[r][c+2] === piece && board[r][c+3] === piece) return true;
                 }
             }
-            // Vertical checking
+            // Vertical columns evaluation
             for (let r = 0; r < 3; r++) {
                 for (let c = 0; c < 7; c++) {
                     if (board[r][c] === piece && board[r+1][c] === piece && board[r+2][c] === piece && board[r+3][c] === piece) return true;
                 }
             }
-            // Positive diagonal checking (bottom-left to top-right)
+            // Positive diagonal evaluation
             for (let r = 3; r < 6; r++) {
                 for (let c = 0; c < 4; c++) {
                     if (board[r][c] === piece && board[r-1][c+1] === piece && board[r-2][c+2] === piece && board[r-3][c+3] === piece) return true;
                 }
             }
-            // Negative diagonal checking (top-left to bottom-right)
+            // Negative diagonal evaluation
             for (let r = 0; r < 3; r++) {
                 for (let c = 0; c < 4; c++) {
                     if (board[r][c] === piece && board[r+1][c+1] === piece && board[r+2][c+2] === piece && board[r+3][c+3] === piece) return true;
