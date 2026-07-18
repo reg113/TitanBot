@@ -16,7 +16,7 @@ export default {
     data: new SlashCommandBuilder()
         .setName('daily')
         .setDescription('Claim your daily cash reward'),
-
+//
     execute: withErrorHandling(async (interaction, config, client) => {
         const deferred = await InteractionHelper.safeDefer(interaction);
         if (!deferred) return;
