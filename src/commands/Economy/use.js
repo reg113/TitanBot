@@ -21,7 +21,14 @@ export default {
                 .setName('item_id')
                 .setDescription('The ID of the item you want to use (e.g., skull)')
                 .setRequired(true)
+        )
+        .addStringOption(option =>
+            option
+                .setName('target')
+                .setDescription('For skull_react: Paste the Message ID or full Message Link')
+                .setRequired(false)
         ),
+    
 
     execute: withErrorHandling(async (interaction, config, client) => {
         // 1. Detect if this was triggered by a regular message or a slash command
