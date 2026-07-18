@@ -15,7 +15,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 export default {
     data: new SlashCommandBuilder()
-        .setName("gcreate2")
+        .setName("gcreate")
         .setDescription("Starts a new giveaway in a specified channel.")
         .addStringOption((option) =>
             option
@@ -78,7 +78,7 @@ export default {
             const winnerCount = interaction.options.getInteger("winners");
             const prize = interaction.options.getString("prize");
             const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
-            const customMessage = interaction.options.getString("message"); // Retrieves the optional string input
+            const customMessage = interaction.options.getString("message");
 
             const durationMs = parseDuration(durationString);
             validateWinnerCount(winnerCount);
@@ -108,10 +108,25 @@ export default {
                 isEnded: false,
                 ended: false,
                 createdAt: new Date().toISOString(),
-                message: customMessage || null // Saved to the dataset for the embed generation engine to safely unpack
+                message: customMessage || null
             };
 
             const embed = createGiveawayEmbed(initialGiveawayData, "active");
+            
+            // --- EMBED INTERCEPTION PATCH ---
+            // If a custom message was provided, we inject it directly into the top of the embed description
+            if (customMessage) {
+                if (typeof embed.setDescription === 'function') {
+                    // Handles it safely if your service returns a standard Discord.js EmbedBuilder instance
+                    const originalDescription = embed.data?.description || '';
+                    embed.setDescription(`${customMessage}\n\n${originalDescription}`);
+                } else if (embed && typeof embed === 'object') {
+                    // Handles it safely if your service returns a raw data object instead
+                    const originalDescription = embed.description || '';
+                    embed.description = `${customMessage}\n\n${originalDescription}`;
+                }
+            }
+
             const row = createGiveawayButtons(false);
 
             const giveawayMessage = await targetChannel.send({
@@ -141,26 +156,10 @@ export default {
                         channelId: targetChannel.id,
                         userId: interaction.user.id,
                         fields: [
-                            {
-                                name: 'Prize',
-                                value: prizeName,
-                                inline: true
-                            },
-                            {
-                                name: 'Winners',
-                                value: winnerCount.toString(),
-                                inline: true
-                            },
-                            {
-                                name: 'Duration',
-                                value: durationString,
-                                inline: true
-                            },
-                            {
-                                name: 'Channel',
-                                value: targetChannel.toString(),
-                                inline: true
-                            }
+                            { name: 'Prize', value: prizeName, inline: true },
+                            { name: 'Winners', value: winnerCount.toString(), inline: true },
+                            { name: 'Duration', value: durationString, inline: true },
+                            { name: 'Channel', value: targetChannel.toString(), inline: true }
                         ]
                     }
                 });
@@ -183,7 +182,7 @@ export default {
         } catch (error) {
             await handleInteractionError(interaction, error, {
                 type: 'command',
-                commandName: 'gcreate2',
+                commandName: 'gcreate',
                 context: 'giveaway_creation'
             });
         }
