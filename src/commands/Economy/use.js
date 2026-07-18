@@ -169,59 +169,70 @@ export default {
             }
 
 // ======================
-
+// --- NEW SKULL REACTION ITEM ROUTINE ---
         } else if (itemId === 'skull_react') {
-            // 1. Extract the Message ID based on the input type
-            let targetMessageId;
+            let targetInput = '';
+
             if (isMessage) {
-                // Assuming your format is: !use skull <message_id>
                 const args = interaction.content.split(/ +/).slice(2); 
-                targetMessageId = args[0];
+                targetInput = args[0] || '';
             } else {
-                // For slash commands, ensure you add a 'target' string option to your command builder
-                targetMessageId = interaction.options.getString('target');
+                targetInput = interaction.options.getString('target') || '';
             }
-        
-            // 2. Validate that an ID was actually provided
-            if (!targetMessageId) {
+
+            if (!targetInput) {
                 throw createError(
                     "Missing Argument",
                     ErrorTypes.VALIDATION,
-                    "❌ You need to provide the **Message ID** of the message you want to react to."
+                    "❌ You need to provide a Message ID or Message Link to use this item!"
                 );
             }
-        
-            try {
-                // 3. Attempt to fetch the message from the current channel
-                const targetMessage = await interaction.channel.messages.fetch(targetMessageId);
-                
-                // 4. React with the skull emoji
-                await targetMessage.react('💀');
-                
-                // 5. Consume 1 skull from the inventory and save
-                userData.inventory[itemId] = currentQuantity - 1;
-                await setEconomyData(client, guildId, userId, userData);
-        
-                // 6. Send success confirmation
-                const successMessage = `💀 **Spooked!** You used 1x **${item.name}** to react to that message.`;
-        
-                if (isMessage) {
-                    await interaction.delete().catch(() => {});
-                    await interaction.channel.send({ content: successMessage });
-                } else {
-                    await InteractionHelper.safeEditReply(interaction, { content: successMessage });
-                }
-        
-            } catch (error) {
-                // Catch block handles missing permissions, invalid IDs, or messages in other channels
-                throw createError(
-                    "Execution Failure",
-                    ErrorTypes.EXECUTION,
-                    "❌ I couldn't find or react to that message. Double-check the Message ID and make sure it's in this channel!"
-                );
-            }
-        }
 
+            let targetChannel = interaction.channel;
+            let targetMessageId = targetInput;
+
+            // Regex pattern to extract IDs if they paste a full URL link instead of a raw ID
+            const linkRegex = /https?:\/\/(?:ptb\.|canary\.)?discord\.com\/channels\/\d+\/(\d+)\/(\d+)/;
+            const match = targetInput.match(linkRegex);
+
+            if (match) {
+                const extractedChannelId = match[1];
+                targetMessageId = match[2];
+                targetChannel = await client.channels.fetch(extractedChannelId).catch(() => null);
+            }
+
+            if (!targetChannel || !targetChannel.isTextBased()) {
+                throw createError(
+                    "Invalid Channel",
+                    ErrorTypes.VALIDATION,
+                    "❌ Could not access the text channel containing that message."
+                );
+            }
+
+            const targetMessage = await targetChannel.messages.fetch(targetMessageId).catch(() => null);
+            if (!targetMessage) {
+                throw createError(
+                    "Message Not Found",
+                    ErrorTypes.VALIDATION,
+                    "❌ Could not find that message. Make sure the ID/link is accurate."
+                );
+            }
+
+            // Apply reaction
+            await targetMessage.react('💀');
+
+            // Deduct from inventory
+            userData.inventory[itemId] = currentQuantity - 1;
+            await setEconomyData(client, guildId, userId, userData);
+
+            const successMessage = `💀 **Spooked!** You used 1x **${item.name}** to react to that message.`;
+
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+                await interaction.channel.send({ content: successMessage });
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { content: successMessage });
+            }
 // ================
         } else if (itemId === 'vault_lock') { //VAULT LOCK
             if (userData.vaultProtected === true) {
