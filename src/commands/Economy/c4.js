@@ -147,6 +147,7 @@ export default {
                 return board.map(row => row.join(' ')).join('\n');
             }
 
+            // Status message injection update map helper layout layer
             function getGameEmbed(statusOverlay = "") {
                 const current = players[turnIndex];
                 const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |  ');
@@ -181,14 +182,13 @@ export default {
                 ];
             }
 
-            // Deploy the first state structure onto the active layout
             await InteractionHelper.safeEditReply(interaction, {
                 embeds: [getGameEmbed()],
                 components: getGameComponents()
             });
 
             const gameCollector = lobbyResponse.createMessageComponentCollector({
-                time: 600000 // 10 minute absolute timeout window
+                time: 600000 
             });
 
             gameCollector.on('collect', async (compCtx) => {
@@ -199,7 +199,6 @@ export default {
                         return compCtx.reply({ content: "❌ You are not a player in this active match!", ephemeral: true });
                     }
 
-                    // 1. Handle Forfeits
                     if (compCtx.customId === 'c4_game_leave') {
                         await compCtx.deferUpdate();
 
@@ -224,7 +223,6 @@ export default {
                         return;
                     }
 
-                    // 2. Handle Token Drops
                     if (compCtx.customId === 'c4_game_drop') {
                         const currentPlayer = players[turnIndex];
 
@@ -240,7 +238,6 @@ export default {
 
                         await compCtx.deferUpdate();
 
-                        // Gravitational drop logic loop
                         for (let r = 5; r >= 0; r--) {
                             if (board[r][colIndex] === ':white_circle:') {
                                 board[r][colIndex] = currentPlayer.emoji;
@@ -248,8 +245,8 @@ export default {
                             }
                         }
 
-                        // Scan terminal match states
-                        if (checkWin(currentPlayer.emoji)) {
+                        // FIXED: Passing 'board' down explicitly into the evaluation matrix
+                        if (checkWin(board, currentPlayer.emoji)) {
                             gameCollector.stop('win');
                             return;
                         }
@@ -259,10 +256,8 @@ export default {
                             return;
                         }
 
-                        // Cycle turn pointer index smoothly
                         turnIndex = (turnIndex + 1) % players.length;
 
-                        // Target the component context directly to apply state updates flawlessly
                         await compCtx.editReply({
                             embeds: [getGameEmbed()],
                             components: getGameComponents()
@@ -305,7 +300,8 @@ export default {
         }
 
         // --- PHASE 3: GRID EVALUATION MATRIX ---
-        function checkWin(piece) {
+        // FIXED: Added board parameter so it doesn't cause a ReferenceError scoping crash
+        function checkWin(board, piece) {
             for (let r = 0; r < 6; r++) { // Horizontal
                 for (let c = 0; c < 4; c++) {
                     if (board[r][c] === piece && board[r][c+1] === piece && board[r][c+2] === piece && board[r][c+3] === piece) return true;
