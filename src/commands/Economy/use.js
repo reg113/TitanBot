@@ -107,7 +107,7 @@ export default {
         // ==========================================
         // 5. Item Execution Logic
         // ==========================================
-        if (itemId === 'skull') {
+        if (itemId === 'skull') { //SKULL
             // Deduct 1 item from inventory
             userData.inventory[itemId] = currentQuantity - 1;
             await setEconomyData(client, guildId, userId, userData);
@@ -135,7 +135,7 @@ export default {
                 }, 10000);
             }
 
-        } else if (itemId === 'fake_id') {
+        } else if (itemId === 'fake_id') { //FAKE ID
             const BANKROB_COOLDOWN = 8 * 60 * 60 * 1000;
             const lastBankrob = userData.lastBankrob || 0;
             const now = Date.now();
@@ -161,7 +161,61 @@ export default {
                 await InteractionHelper.safeEditReply(interaction, { content: activationMessage });
             }
 
-        } else if (itemId === 'vault_lock') {
+            // ======================
+
+                } else if (itemId === 'skull') { // SKULL REACT
+        // 1. Extract the Message ID based on the input type
+        let targetMessageId;
+        if (isMessage) {
+            // Assuming your format is: !use skull <message_id>
+            const args = interaction.content.split(/ +/).slice(2); 
+            targetMessageId = args[0];
+        } else {
+            // For slash commands, ensure you add a 'target' string option to your command builder
+            targetMessageId = interaction.options.getString('target');
+        }
+    
+        // 2. Validate that an ID was actually provided
+        if (!targetMessageId) {
+            throw createError(
+                "Missing Argument",
+                ErrorTypes.VALIDATION,
+                "❌ You need to provide the **Message ID** of the message you want to react to."
+            );
+        }
+    
+        try {
+            // 3. Attempt to fetch the message from the current channel
+            const targetMessage = await interaction.channel.messages.fetch(targetMessageId);
+            
+            // 4. React with the skull emoji
+            await targetMessage.react('💀');
+            
+            // 5. Consume 1 skull from the inventory and save
+            userData.inventory[itemId] = currentQuantity - 1;
+            await setEconomyData(client, guildId, userId, userData);
+    
+            // 6. Send success confirmation
+            const successMessage = `💀 **Spooked!** You used 1x **${item.name}** to react to that message.`;
+    
+            if (isMessage) {
+                await interaction.delete().catch(() => {});
+                await interaction.channel.send({ content: successMessage });
+            } else {
+                await InteractionHelper.safeEditReply(interaction, { content: successMessage });
+            }
+    
+        } catch (error) {
+            // Catch block handles missing permissions, invalid IDs, or messages in other channels
+            throw createError(
+                "Execution Failure",
+                ErrorTypes.EXECUTION,
+                "❌ I couldn't find or react to that message. Double-check the Message ID and make sure it's in this channel!"
+            );
+        }
+    }
+// ================
+        } else if (itemId === 'vault_lock') { //VAULT LOCK
             if (userData.vaultProtected === true) {
                 throw createError(
                     "Already Protected",
