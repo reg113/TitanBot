@@ -15,7 +15,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 export default {
     data: new SlashCommandBuilder()
-        .setName("gcreate")
+        .setName("gcreate2")
         .setDescription("Starts a new giveaway in a specified channel.")
         .addStringOption((option) =>
             option
@@ -182,7 +182,7 @@ export default {
         } catch (error) {
             await handleInteractionError(interaction, error, {
                 type: 'command',
-                commandName: 'gcreate',
+                commandName: 'gcreate2',
                 context: 'giveaway_creation'
             });
         }
