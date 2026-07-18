@@ -44,7 +44,12 @@ export default {
                 .addChannelTypes(ChannelType.GuildText)
                 .setRequired(false),
         )
-        // Restricts visibility in Discord's UI to only members with Administrator permissions
+        .addStringOption((option) =>
+            option
+                .setName("message")
+                .setDescription("An optional custom message or description to show in the giveaway embed.")
+                .setRequired(false),
+        )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
     async execute(interaction) {
@@ -58,7 +63,6 @@ export default {
                 );
             }
 
-            // Backend validation checking specifically for the Administrator permission string
             if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
                 throw new TitanBotError(
                     'User lacks Administrator permission',
@@ -74,6 +78,7 @@ export default {
             const winnerCount = interaction.options.getInteger("winners");
             const prize = interaction.options.getString("prize");
             const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
+            const customMessage = interaction.options.getString("message"); // Retrieves the optional string input
 
             const durationMs = parseDuration(durationString);
             validateWinnerCount(winnerCount);
@@ -95,14 +100,15 @@ export default {
                 channelId: targetChannel.id,
                 guildId: interaction.guildId,
                 prize: prizeName,
-                hostId: interaction.client.user.id, // Sets the Bot application profile as the official host
+                hostId: interaction.client.user.id,
                 endTime: endTime,
                 endsAt: endTime,
                 winnerCount: winnerCount,
                 participants: [],
                 isEnded: false,
                 ended: false,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                message: customMessage || null // Saved to the dataset for the embed generation engine to safely unpack
             };
 
             const embed = createGiveawayEmbed(initialGiveawayData, "active");
