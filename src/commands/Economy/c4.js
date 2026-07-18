@@ -167,6 +167,7 @@ export default {
             let drawVotes = new Set();
             let statusOverlay = "";
 
+            // Custom dynamic helper wrapper to isolate multi-row grid components
             function renderBoardString() {
                 return board.map(row => row.join(' ')).join('\n');
             }
@@ -252,12 +253,11 @@ export default {
                         if (m.author.id !== currentPlayer.id) return; 
 
                         const contentClean = m.content.trim();
-                        if (!/^\d+$/.test(contentClean)) return; // Pass if it's general match chat text
+                        if (!/^\d+$/.test(contentClean)) return; 
 
                         const colIdx = parseInt(contentClean) - 1;
                         
                         if (colIdx < 0 || colIdx >= columns) {
-                            // Safely delete mismatched column numbers to keep the chat clean
                             m.delete().catch(() => {});
                             return;
                         }
@@ -360,7 +360,6 @@ export default {
         }
 
         // --- PHASE 3: DYNAMIC GRID EVALUATION MATRIX ---
-        font-weight: normal;
         function checkWin(board, piece, rMax, cMax) {
             // Horizontal check
             for (let r = 0; r < rMax; r++) {
