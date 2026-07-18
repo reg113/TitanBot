@@ -132,10 +132,13 @@ async function handleCountingGame(message, client) {
 
     const content = message.content.trim();
     const validCount = isValidCountingMessage(content, config);
-    const invalidAttempt = !validCount || message.author.id === config.lastUserId;
+    const isDoubleCount = message.author.id === config.lastUserId;
+    const invalidAttempt = !validCount || isDoubleCount;
 
     if (invalidAttempt) {
-      await message.delete().catch(() => {});
+      // Slap on the error reaction first
+      await message.react('❌').catch(() => {});
+
       await saveCountingGameConfig(client, message.guild.id, {
         ...config,
         nextNumber: 1,
@@ -143,7 +146,12 @@ async function handleCountingGame(message, client) {
         currentStreak: 0,
       });
 
-      const failureMessage = await message.channel.send(`❌ Count broken by <@${message.author.id}>. The sequence has been reset to **1**.`);
+      // Tailor the message based on how they broke the chain
+      const reason = isDoubleCount ? 'counting twice in a row' : 'entering the wrong number';
+      const failureMessage = await message.channel.send(
+        `❌ Count broken by <@${message.author.id}> (${reason}). The sequence has been reset to **1**.`
+      );
+
       setTimeout(() => {
         failureMessage.delete().catch(() => {});
       }, 10000);
@@ -151,6 +159,9 @@ async function handleCountingGame(message, client) {
       return true;
     }
 
+    // Slap on the skull reaction for a perfect count
+    await message.react('💀').catch(() => {});
+    
     await recordCorrectCount(client, message.guild.id, message.author.id);
     return true;
   } catch (error) {
