@@ -1,10 +1,4 @@
-import { 
-    SlashCommandBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle, 
-    ComponentType 
-} from 'discord.js';
+import { SlashCommandBuilder } from 'discord.js';
 import { createEmbed, errorEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/embeds.js';
 import { withErrorHandling, createError, ErrorTypes } from '../../utils/errorHandler.js';
 import { logger } from '../../utils/logger.js';
@@ -13,7 +7,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('connect4')
-        .setDescription('Challenge another member to a game of Connect 4!')
+        .setDescription('Challenge another member to a game of Connect 4 using text inputs!')
         .addUserOption(option =>
             option.setName('opponent')
                 .setDescription('The user you want to challenge')
@@ -28,7 +22,7 @@ export default {
         const opponent = interaction.options.getUser('opponent');
         const guildId = interaction.guildId;
 
-        // 1. Validation Checks
+        // 1. Core Validations
         if (opponent.id === challenger.id) {
             throw createError(
                 "Self challenge restriction",
@@ -42,64 +36,50 @@ export default {
             throw createError(
                 "Bot challenge restriction",
                 ErrorTypes.VALIDATION,
-                "Bots haven't learned how to play Connect 4 here yet. Challenge a human!",
+                "Bots cannot play Connect 4. Challenge a human!",
                 { userId: challenger.id, targetBotId: opponent.id }
             );
         }
 
-        logger.info(`[GAMES] Connect 4 challenge issued by ${challenger.id} to ${opponent.id}`, { guildId });
+        logger.info(`[GAMES] Connect 4 text-challenge issued by ${challenger.id} to ${opponent.id}`, { guildId });
 
-        // 2. Phase 1: The Invitation Menu
+        // 2. Invitation Phase via Text Reactions / Text Confirmation
         const inviteEmbed = infoEmbed(
             "🔴 Connect 4 Challenge! 🟡",
-            `**${challenger.username}** has challenged **${opponent.toString()}** to a match of Connect 4!\n\nDo you accept the challenge?`
+            `**${challenger.username}** has challenged **${opponent.toString()}** to a match of Connect 4!\n\n👉 **${opponent.username}**, type **\`accept\`** in chat to play, or **\`decline\`** to refuse.`
         ).setFooter({ text: "Invitation expires in 60 seconds." });
-
-        const inviteRows = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('c4_accept').setLabel('Accept').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('c4_decline').setLabel('Decline').setStyle(ButtonStyle.Danger)
-        );
 
         await InteractionHelper.safeEditReply(interaction, {
             content: opponent.toString(),
             embeds: [inviteEmbed],
-            components: [inviteRows]
+            components: [] // Explicitly stripped of buttons
         });
 
-        const inviteResponse = await interaction.fetchReply();
-        const inviteCollector = inviteResponse.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            time: 60000
+        // Set up a collector in the channel to watch for the invite response
+        const channel = interaction.channel;
+        const inviteCollector = channel.createMessageCollector({
+            filter: m => m.author.id === opponent.id && ['accept', 'decline'].includes(m.content.toLowerCase()),
+            time: 60000,
+            max: 1
         });
 
-        // Game State Variables shared across execution scope
         let gameActive = false;
-        let player1 = challenger;
-        let player2 = opponent;
-        let currentTurn = player1; 
-        
-        // 6 rows x 7 columns board representation
         const board = Array(6).fill(null).map(() => Array(7).fill('⚪'));
         const P1_EMOJI = '🔴';
         const P2_EMOJI = '🟡';
+        let currentTurn = challenger;
 
-        inviteCollector.on('collect', async (btnCtx) => {
-            if (btnCtx.user.id !== opponent.id) {
-                return btnCtx.reply({ content: "Only the challenged opponent can respond to this invite!", ephemeral: true });
-            }
-
-            await btnCtx.deferUpdate();
-
-            if (btnCtx.customId === 'c4_accept') {
+        inviteCollector.on('collect', async (msg) => {
+            if (msg.content.toLowerCase() === 'accept') {
                 gameActive = true;
-                inviteCollector.stop('accepted');
-            } else {
-                inviteCollector.stop('declined');
+                try { await msg.delete(); } catch (e) { /* Ignore if missing permissions */ }
             }
         });
 
-        inviteCollector.on('end', async (_, reason) => {
-            if (reason === 'declined') {
+        inviteCollector.on('end', async (collected) => {
+            const firstMsg = collected.first();
+            
+            if (!gameActive || (firstMsg && firstMsg.content.toLowerCase() === 'decline')) {
                 await InteractionHelper.safeEditReply(interaction, {
                     content: ' ',
                     embeds: [warningEmbed("Challenge Declined", `${opponent.username} decided not to play this time.`)],
@@ -108,146 +88,106 @@ export default {
                 return;
             }
 
-            if (reason === 'time' && !gameActive) {
-                await InteractionHelper.safeEditReply(interaction, {
-                    content: ' ',
-                    embeds: [warningEmbed("Challenge Expired", `${opponent.username} didn't respond to the invitation in time.`)],
-                    components: []
-                });
-                return;
-            }
-
-            if (reason === 'accepted' && gameActive) {
-                // Begin Phase 2: Active Gameplay Loop
-                await runGameLoop();
-            }
+            // Run the active game loop if accepted
+            await runGameLoop();
         });
 
-        // 3. Phase 2: Gameplay Mechanics Framework
+        // 3. Active Gameplay Loop via Text Inputs
         async function runGameLoop() {
-            const gameCollector = inviteResponse.createMessageComponentCollector({
-                componentType: ComponentType.Button,
-                time: 300000 // 5-minute maximum match duration
-            });
-
-            // Renders the board to visual strings
             function renderBoardString() {
                 return board.map(row => row.join(' ')).join('\n');
             }
 
-            function getGameEmbed(statusText = "") {
-                const turnStatus = statusText || `Current Turn: ${currentTurn.toString()} ${currentTurn.id === player1.id ? P1_EMOJI : P2_EMOJI}`;
+            function getGameEmbed(extraText = "") {
+                const turnStatus = `Current Turn: ${currentTurn.toString()} ${currentTurn.id === challenger.id ? P1_EMOJI : P2_EMOJI}\n👉 Type a column number (**1-7**) to drop your piece!`;
                 return infoEmbed(
-                    `📊 Connect 4: ${player1.username} vs ${player2.username}`,
-                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n${turnStatus}`
+                    `📊 Connect 4: ${challenger.username} vs ${opponent.username}`,
+                    `${renderBoardString()}\n\n🔹 1️⃣ 2️⃣ 3️⃣ 4️⃣ 5️⃣ 6️⃣ 7️⃣\n\n${extraText || turnStatus}`
                 );
             }
 
-            function getGameControls(disabled = false) {
-                const row1 = new ActionRowBuilder();
-                const row2 = new ActionRowBuilder();
-
-                // Columns 1 to 5
-                for (let i = 0; i < 5; i++) {
-                    row1.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`c4_drop_${i}`)
-                            .setLabel(`${i + 1}`)
-                            .setStyle(ButtonStyle.Secondary)
-                            .setDisabled(disabled || board[0][i] !== '⚪')
-                    );
-                }
-
-                // Columns 6 and 7
-                for (let i = 5; i < 7; i++) {
-                    row2.addComponents(
-                        new ButtonBuilder()
-                            .setCustomId(`c4_drop_${i}`)
-                            .setLabel(`${i + 1}`)
-                            .setStyle(ButtonStyle.Secondary)
-                            .setDisabled(disabled || board[0][i] !== '⚪')
-                    );
-                }
-
-                return [row1, row2];
-            }
-
-            // Push initial board viewport layout
+            // Send initial board
             await InteractionHelper.safeEditReply(interaction, {
-                content: `🎮 Match Started! Turn: ${currentTurn.toString()}`,
-                embeds: [getGameEmbed()],
-                components: getGameControls()
+                content: `🎮 Match Started!`,
+                embeds: [getGameEmbed()]
             });
 
-            gameCollector.on('collect', async (gameBtnCtx) => {
-                if (gameBtnCtx.user.id !== currentTurn.id) {
-                    return gameBtnCtx.reply({ content: `It's not your turn! Wait for ${currentTurn.username} to move.`, ephemeral: true });
+            // Collect messages that are numbers 1-7 from either active player
+            const gameCollector = channel.createMessageCollector({
+                filter: m => [challenger.id, opponent.id].includes(m.author.id) && /^[1-7]$/.test(m.content.trim()),
+                time: 300000 // 5-minute hard limit total match time
+            });
+
+            gameCollector.on('collect', async (msg) => {
+                // Ensure it's the correct user's turn
+                if (msg.author.id !== currentTurn.id) {
+                    return; // Ignore inputs out of turn silently, or you can send a brief warning
                 }
 
-                await gameBtnCtx.deferUpdate();
-                
-                const colIndex = parseInt(gameBtnCtx.customId.split('_')[2]);
-                const currentEmoji = currentTurn.id === player1.id ? P1_EMOJI : P2_EMOJI;
+                const colIndex = parseInt(msg.content.trim()) - 1;
+                const currentEmoji = currentTurn.id === challenger.id ? P1_EMOJI : P2_EMOJI;
 
-                // Drop piece to the lowest index row available in the target column
-                let piecePlaced = false;
+                // Attempt to clean up the player's text entry to keep chat neat
+                try { await msg.delete(); } catch (e) {}
+
+                // Check if column is full
+                if (board[0][colIndex] !== '⚪') {
+                    // Re-render with a quick warning embedded
+                    await InteractionHelper.safeEditReply(interaction, {
+                        embeds: [getGameEmbed(`⚠️ **Column ${colIndex + 1} is full!** Choose another column, ${currentTurn.toString()}.`)]
+                    });
+                    return;
+                }
+
+                // Drop piece into the lowest open row index
                 for (let r = 5; r >= 0; r--) {
                     if (board[r][colIndex] === '⚪') {
                         board[r][colIndex] = currentEmoji;
-                        piecePlaced = true;
                         break;
                     }
                 }
 
-                if (!piecePlaced) {
-                    return; // Fail-safe fallback if column button state fails validation
-                }
-
-                // Check for terminal win states
+                // Check for wins
                 if (checkWin(currentEmoji)) {
                     gameCollector.stop('win');
                     return;
                 }
 
-                // Check for draw states (top row completely saturated)
+                // Check for a tie match
                 if (board[0].every(cell => cell !== '⚪')) {
                     gameCollector.stop('draw');
                     return;
                 }
 
-                // Swap turns seamlessly
-                currentTurn = currentTurn.id === player1.id ? player2 : player1;
+                // Flip turn state
+                currentTurn = currentTurn.id === challenger.id ? opponent : challenger;
 
+                // Update viewport message
                 await InteractionHelper.safeEditReply(interaction, {
-                    content: `Turn: ${currentTurn.toString()}`,
-                    embeds: [getGameEmbed()],
-                    components: getGameControls()
+                    embeds: [getGameEmbed()]
                 });
             });
 
             gameCollector.on('end', async (_, endReason) => {
-                const finalControls = getGameControls(true);
-
                 if (endReason === 'win') {
                     const winEmbed = successEmbed(
                         "🏆 Connect 4 Victory!",
-                        `${renderBoardString()}\n\n🎉 **${currentTurn.username}** has aligned 4 and won the match!`
+                        `${renderBoardString()}\n\n🎉 **${currentTurn.username}** aligned 4 pieces and won the match!`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [winEmbed], components: finalControls });
-                    logger.info(`[GAMES] Connect 4 match finished. Winner: ${currentTurn.id}`, { guildId });
+                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [winEmbed] });
+                    logger.info(`[GAMES] Connect 4 text-match finished. Winner: ${currentTurn.id}`, { guildId });
                 } else if (endReason === 'draw') {
                     const drawEmbed = infoEmbed(
                         "🤝 Stalemate!",
-                        `${renderBoardString()}\n\nThe board is completely full! The game ends in a tie.`
+                        `${renderBoardString()}\n\nThe board is full! The game ends in a tie.`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [drawEmbed], components: finalControls });
+                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [drawEmbed] });
                 } else {
-                    // Timeout fallback handler
                     const timeoutEmbed = warningEmbed(
                         "⌛ Match Abandoned",
-                        `${renderBoardString()}\n\nThe game timed out because a player took longer than 5 minutes to complete their turn.`
+                        `${renderBoardString()}\n\nThe game timed out because players stopped typing columns.`
                     );
-                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [timeoutEmbed], components: finalControls });
+                    await InteractionHelper.safeEditReply(interaction, { content: ' ', embeds: [timeoutEmbed] });
                 }
             });
         }
