@@ -220,7 +220,7 @@ export default {
                         const finalWelcomeDestination = welcomeChannel || freshVoteChannel;
 
                         if (finalWelcomeDestination) {
-                            const welcomeMessageContent = `**Welcome!** ${targetUser.toString()} has officially received the <@&${TARGET_ROLE_ID}> role! Let's give them a massive welcome! 🎉`;
+                            const welcomeMessageContent = `**Welcome!** ${targetUser.toString()} has officially received the `<@&${TARGET_ROLE_ID}>` role! Let's give them a massive welcome! 🎉`;
                             await finalWelcomeDestination.send({ content: welcomeMessageContent }).catch(err => {
                                 console.error('[Nominate Welcome Error] Bot failed sending welcome announcement:', err);
                             });
