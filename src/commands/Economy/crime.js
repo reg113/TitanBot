@@ -12,10 +12,10 @@ const JAIL_TIME = 2 * 60 * 60 * 1000;
 
 const CRIME_TYPES = [
     { name: "Pickpocketing", min: 100, max: 500, risk: 0.3 },
-    { name: "Burglary", min: 300, max: 1000, risk: 0.4 },
-    { name: "Bank Heist", min: 1000, max: 5000, risk: 0.6 },
-    { name: "Art Theft", min: 2000, max: 10000, risk: 0.7 },
-    { name: "Cybercrime", min: 5000, max: 20000, risk: 0.8 },
+    { name: "Burglary", min: 300, max: 500, risk: 0.4 },
+    { name: "Bank Heist", min: 1000, max: 1500, risk: 0.6 },
+    { name: "Art Theft", min: 1300, max: 1700, risk: 0.7 },
+    { name: "Cybercrime", min: 600, max: 1700, risk: 0.7 },
 ];
 
 export default {
