@@ -260,17 +260,17 @@ export default {
                         const colIdx = parseInt(contentClean) - 1;
                         
                         if (colIdx < 0 || colIdx >= columns) {
-                            m.delete().catch(() => {});
+                            //m.delete().catch(() => {});
                             return;
                         }
 
                         if (board[0][colIdx] !== ':white_circle:') {
-                            m.delete().catch(() => {});
+                            //m.delete().catch(() => {});
                             return; 
                         }
 
                         nextAction = { type: 'move', columnIndex: colIdx };
-                        m.delete().catch(() => {});
+                        //m.delete().catch(() => {});
                         resolve();
                     });
 
