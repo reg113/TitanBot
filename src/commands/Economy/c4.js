@@ -16,15 +16,15 @@ export default {
         .setDescription('Start an interactive multiplayer Connect 4 match!')
         .addIntegerOption(option => 
             option.setName('rows')
-                .setDescription('Number of vertical spaces (Default: 6, Min: 4, Max: 10)')
+                .setDescription('Number of vertical spaces (Default: 6, Min: 4, Max: 15)')
                 .setMinValue(4)
-                .setMaxValue(10)
+                .setMaxValue(15)
                 .setRequired(false))
         .addIntegerOption(option => 
             option.setName('columns')
-                .setDescription('Number of horizontal spaces (Default: 7, Min: 4, Max: 10)')
+                .setDescription('Number of horizontal spaces (Default: 7, Min: 4, Max: 15)')
                 .setMinValue(4)
-                .setMaxValue(10)
+                .setMaxValue(15)
                 .setRequired(false))
         .addIntegerOption(option => 
             option.setName('timer')
@@ -40,7 +40,7 @@ export default {
         const host = interaction.user;
         const guildId = interaction.guildId;
 
-        // Fetch custom options or apply defaults
+        // Fetch custom maximized options or apply defaults
         const rows = interaction.options.getInteger('rows') || 6;
         const columns = interaction.options.getInteger('columns') || 7;
         const turnTimer = interaction.options.getInteger('timer') || 45;
@@ -51,8 +51,6 @@ export default {
             { emoji: ':blue_circle:', name: 'Blue' },
             { emoji: ':green_circle:', name: 'Green' }
         ];
-
-        const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
         let players = [
             { id: host.id, username: host.username, user: host, emoji: PLAYER_CONFIGS[0].emoji }
@@ -176,17 +174,19 @@ export default {
             function getGameEmbed(extraInfo = "") {
                 const current = players[turnIndex];
                 const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |   ');
-                const columnIndicators = NUMBER_EMOJIS.slice(0, columns).join(' ');
                 
-                const mainPrompt = extraInfo || `👉 **Turn:** ${current.user.toString()} ${current.emoji}\n💡 Click a number reaction below to drop your piece! You have **${turnTimer} seconds**.`;
+                // Formats custom monospaced indicators so they look structurally perfect under circle emojis
+                const columnIndicators = Array.from({ length: columns }, (_, i) => `\`${String(i + 1).padStart(2, '0')}\``).join(' ');
+                
+                const mainPrompt = extraInfo || `👉 **Turn:** ${current.user.toString()} ${current.emoji}\n💡 **Type a column number (1-${columns})** directly in chat to make your move! You have **${turnTimer} seconds**.`;
 
                 return infoEmbed(
                     `📊 Connect 4 Arena (\`${rows}x${columns}\`)`,
-                    `${renderBoardString()}\n\n🔹 ${columnIndicators}\n\n**Key:** ${keyMap}\n\n${mainPrompt}`
+                    `${renderBoardString()}\n\n${columnIndicators}\n\n**Key:** ${keyMap}\n\n${mainPrompt}`
                 );
             }
 
-            // Clean up the initial lobby interface wrapper
+            // Clean up lobby message context
             await InteractionHelper.safeEditReply(interaction, {
                 embeds: [infoEmbed("🎮 Connect 4 Match", "The match has officially begun! Check the active board below.")],
                 components: []
@@ -196,7 +196,6 @@ export default {
             while (players.length >= 2) {
                 const currentPlayer = players[turnIndex];
                 
-                // Build utility action elements
                 const drawLabel = `🤝 Vote Draw (${drawVotes.size}/${players.length})`;
                 const actionRow = new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('c4_btn_draw').setLabel(drawLabel).setStyle(ButtonStyle.Secondary),
@@ -208,19 +207,14 @@ export default {
                     components: [actionRow]
                 });
 
-                // Asynchronously apply valid column reactions down the stream
-                const allowedEmojis = NUMBER_EMOJIS.slice(0, columns);
-                for (const emoji of allowedEmojis) {
-                    activeMessage.react(emoji).catch(() => {});
-                }
-
                 let nextAction = null; 
 
                 const compCollector = activeMessage.createMessageComponentCollector({
                     time: turnTimer * 1000
                 });
-                const reactCollector = activeMessage.createReactionCollector({
-                    filter: (reaction, user) => !user.bot && players.some(p => p.id === user.id),
+
+                const msgCollector = interaction.channel.createMessageCollector({
+                    filter: (m) => !m.author.bot && players.some(p => p.id === m.author.id),
                     time: turnTimer * 1000
                 });
 
@@ -243,7 +237,6 @@ export default {
                                 nextAction = { type: 'draw_agree' };
                                 resolve();
                             } else {
-                                // Dynamic internal refresh to display updated vote count increments
                                 const updatedDrawLabel = `🤝 Vote Draw (${drawVotes.size}/${players.length})`;
                                 const updatedRow = new ActionRowBuilder().addComponents(
                                     new ButtonBuilder().setCustomId('c4_btn_draw').setLabel(updatedDrawLabel).setStyle(ButtonStyle.Secondary),
@@ -254,27 +247,33 @@ export default {
                         }
                     });
 
-                    // 2. Listen for move selection reactions
-                    reactCollector.on('collect', async (reaction, user) => {
-                        if (user.id !== currentPlayer.id) {
-                            try { await reaction.users.remove(user.id); } catch {}
-                            return; 
+                    // 2. Listen for text typed column numbers
+                    msgCollector.on('collect', async (m) => {
+                        if (m.author.id !== currentPlayer.id) return; 
+
+                        const contentClean = m.content.trim();
+                        if (!/^\d+$/.test(contentClean)) return; // Pass if it's general match chat text
+
+                        const colIdx = parseInt(contentClean) - 1;
+                        
+                        if (colIdx < 0 || colIdx >= columns) {
+                            // Safely delete mismatched column numbers to keep the chat clean
+                            m.delete().catch(() => {});
+                            return;
                         }
 
-                        const colIdx = allowedEmojis.indexOf(reaction.emoji.name);
-                        if (colIdx === -1) return; 
-
                         if (board[0][colIdx] !== ':white_circle:') {
-                            try { await reaction.users.remove(user.id); } catch {}
+                            m.delete().catch(() => {});
                             return; 
                         }
 
                         nextAction = { type: 'move', columnIndex: colIdx };
+                        m.delete().catch(() => {});
                         resolve();
                     });
 
                     // 3. Handle Round Expiration
-                    reactCollector.on('end', (collected, reason) => {
+                    msgCollector.on('end', (collected, reason) => {
                         if (reason === 'time' && !nextAction) {
                             nextAction = { type: 'timeout', userId: currentPlayer.id };
                             resolve();
@@ -282,9 +281,8 @@ export default {
                     });
                 });
 
-                // Clear out components and shut down active tracking structures
                 compCollector.stop();
-                reactCollector.stop();
+                msgCollector.stop();
                 await activeMessage.edit({ components: [] }).catch(() => {});
 
                 // --- RESOLVE ACTIONS ---
@@ -362,6 +360,7 @@ export default {
         }
 
         // --- PHASE 3: DYNAMIC GRID EVALUATION MATRIX ---
+        font-weight: normal;
         function checkWin(board, piece, rMax, cMax) {
             // Horizontal check
             for (let r = 0; r < rMax; r++) {
