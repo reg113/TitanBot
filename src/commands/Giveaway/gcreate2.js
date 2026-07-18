@@ -47,7 +47,13 @@ export default {
         .addStringOption((option) =>
             option
                 .setName("message")
-                .setDescription("An optional custom message or description to show in the giveaway embed.")
+                .setDescription("An optional custom message or description to show INSIDE the giveaway embed.")
+                .setRequired(false),
+        )
+        .addStringOption((option) =>
+            option
+                .setName("text")
+                .setDescription("An optional normal text message to send OUTSIDE/ABOVE the giveaway embed.")
                 .setRequired(false),
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -79,6 +85,7 @@ export default {
             const prize = interaction.options.getString("prize");
             const targetChannel = interaction.options.getChannel("channel") || interaction.channel;
             const customMessage = interaction.options.getString("message");
+            const normalText = interaction.options.getString("text"); // Retrieves the plain text option
 
             const durationMs = parseDuration(durationString);
             validateWinnerCount(winnerCount);
@@ -113,15 +120,12 @@ export default {
 
             const embed = createGiveawayEmbed(initialGiveawayData, "active");
             
-            // --- EMBED INTERCEPTION PATCH ---
-            // If a custom message was provided, we inject it directly into the top of the embed description
+            // Injects message option into embed if provided
             if (customMessage) {
                 if (typeof embed.setDescription === 'function') {
-                    // Handles it safely if your service returns a standard Discord.js EmbedBuilder instance
                     const originalDescription = embed.data?.description || '';
                     embed.setDescription(`${customMessage}\n\n${originalDescription}`);
                 } else if (embed && typeof embed === 'object') {
-                    // Handles it safely if your service returns a raw data object instead
                     const originalDescription = embed.description || '';
                     embed.description = `${customMessage}\n\n${originalDescription}`;
                 }
@@ -129,8 +133,14 @@ export default {
 
             const row = createGiveawayButtons(false);
 
+            // Construct the main text payload (outside the embed)
+            let finalContent = "🎉 **NEW GIVEAWAY** 🎉";
+            if (normalText) {
+                finalContent += `\n\n${normalText}`;
+            }
+
             const giveawayMessage = await targetChannel.send({
-                content: "🎉 **NEW GIVEAWAY** 🎉",
+                content: finalContent,
                 embeds: [embed],
                 components: [row],
             });
