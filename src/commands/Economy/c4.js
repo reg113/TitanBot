@@ -147,10 +147,9 @@ export default {
                 return board.map(row => row.join(' ')).join('\n');
             }
 
-            // Status message injection update map helper layout layer
             function getGameEmbed(statusOverlay = "") {
                 const current = players[turnIndex];
-                const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |  ');
+                const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |   ');
                 const mainPrompt = statusOverlay || `👉 **Turn:** ${current.user.toString()} ${current.emoji}\nSelect a column from the dropdown menu below to play!`;
 
                 return infoEmbed(
@@ -182,12 +181,21 @@ export default {
                 ];
             }
 
+            // 1. Clean up the lobby message context layout
             await InteractionHelper.safeEditReply(interaction, {
+                embeds: [infoEmbed("🎮 Connect 4 Match", "The match has officially begun! Check the active board below.")],
+                components: []
+            });
+
+            // 2. Initialize the very first active message in the channel stream
+            let activeMessage = await interaction.channel.send({
                 embeds: [getGameEmbed()],
                 components: getGameComponents()
             });
 
-            const gameCollector = lobbyResponse.createMessageComponentCollector({
+            // 3. Switch to a channel-based component collector tracking our activeMessage references
+            const gameCollector = interaction.channel.createMessageComponentCollector({
+                filter: (i) => i.customId.startsWith('c4_game_') && i.message.id === activeMessage.id,
                 time: 600000 
             });
 
@@ -207,6 +215,9 @@ export default {
 
                         players.splice(leavingIndex, 1);
                         
+                        // Strip components from old message immediately
+                        await activeMessage.edit({ components: [] }).catch(() => {});
+                        
                         if (players.length < 2) {
                             gameCollector.stop('forfeit_victory');
                             return;
@@ -216,8 +227,9 @@ export default {
                             turnIndex = 0;
                         }
 
-                        await compCtx.editReply({
-                            embeds: [getGameEmbed(`🔔 **${leavingPlayer.username}** has abandoned the match.`)],
+                        // Send new turn message
+                        activeMessage = await interaction.channel.send({
+                            embeds: [getGameEmbed(`` + "🔔" + ` **${leavingPlayer.username}** has abandoned the match.`)],
                             components: getGameComponents()
                         });
                         return;
@@ -238,6 +250,9 @@ export default {
 
                         await compCtx.deferUpdate();
 
+                        // Strip components from old board before rendering new turn
+                        await activeMessage.edit({ components: [] }).catch(() => {});
+
                         for (let r = 5; r >= 0; r--) {
                             if (board[r][colIndex] === ':white_circle:') {
                                 board[r][colIndex] = currentPlayer.emoji;
@@ -245,7 +260,6 @@ export default {
                             }
                         }
 
-                        // FIXED: Passing 'board' down explicitly into the evaluation matrix
                         if (checkWin(board, currentPlayer.emoji)) {
                             gameCollector.stop('win');
                             return;
@@ -258,7 +272,8 @@ export default {
 
                         turnIndex = (turnIndex + 1) % players.length;
 
-                        await compCtx.editReply({
+                        // Send a brand new message down the channel for the new turn layout
+                        activeMessage = await interaction.channel.send({
                             embeds: [getGameEmbed()],
                             components: getGameComponents()
                         });
@@ -270,27 +285,28 @@ export default {
 
             gameCollector.on('end', async (_, endReason) => {
                 try {
+                    // Double check components are wiped clean from our final active layout
+                    if (activeMessage) {
+                        await activeMessage.edit({ components: [] }).catch(() => {});
+                    }
+
                     if (endReason === 'win') {
                         const winner = players[turnIndex];
-                        await InteractionHelper.safeEditReply(interaction, {
+                        await interaction.channel.send({
                             embeds: [successEmbed("🏆 Match Decided!", `${renderBoardString()}\n\n🎉 Congratulations **${winner.username}** (${winner.emoji}), you aligned 4 and claimed victory!`)],
-                            components: []
                         });
                     } else if (endReason === 'forfeit_victory') {
                         const survivor = players[0];
-                        await InteractionHelper.safeEditReply(interaction, {
+                        await interaction.channel.send({
                             embeds: [successEmbed("🏆 Victory by Forfeit", `${renderBoardString()}\n\n🎉 Everyone else backed out! **${survivor.username}** (${survivor.emoji}) wins the game!`)],
-                            components: []
                         });
                     } else if (endReason === 'draw') {
-                        await InteractionHelper.safeEditReply(interaction, {
+                        await interaction.channel.send({
                             embeds: [infoEmbed("🤝 Game Over", `${renderBoardString()}\n\nThe grid is completely packed out. The match ends in a draw!`)],
-                            components: []
                         });
                     } else {
-                        await InteractionHelper.safeEditReply(interaction, {
+                        await interaction.channel.send({
                             embeds: [warningEmbed("⌛ Session Expired", "The match timed out due to total inactivity.")],
-                            components: []
                         });
                     }
                 } catch (err) {
@@ -300,7 +316,6 @@ export default {
         }
 
         // --- PHASE 3: GRID EVALUATION MATRIX ---
-        // FIXED: Added board parameter so it doesn't cause a ReferenceError scoping crash
         function checkWin(board, piece) {
             for (let r = 0; r < 6; r++) { // Horizontal
                 for (let c = 0; c < 4; c++) {
