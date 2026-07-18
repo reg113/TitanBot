@@ -163,7 +163,7 @@ export default {
 
             // ======================
 
-                } else if (itemId === 'skull') { // SKULL REACT
+                } else if (itemId === 'skull_react') { // SKULL REACT
         // 1. Extract the Message ID based on the input type
         let targetMessageId;
         if (isMessage) {
