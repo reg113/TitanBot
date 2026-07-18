@@ -120,7 +120,7 @@ export default {
             await setEconomyData(client, guildId, userId, userData);
 
             const messageAlert = `💀 **AHLUL SKULL PING ACTIVATED!**`;
-            const messageMain = `<@&1515655155050086400> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
+            const messageMain = `<@&1524077805653065808> \n\n-# Activated by ${user.toString()} • ${userData.inventory[itemId]} remaining`;
 
             if (isMessage) {
                 await interaction.delete().catch(() => {});
