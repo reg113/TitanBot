@@ -16,15 +16,15 @@ export default {
         .setDescription('Start an interactive multiplayer Connect 4 match!')
         .addIntegerOption(option => 
             option.setName('rows')
-                .setDescription('Number of vertical spaces (Default: 6, Min: 4, Max: 15)')
+                .setDescription('Number of vertical spaces (Default: 6, Min: 4, Max: 10)')
                 .setMinValue(4)
-                .setMaxValue(15)
+                .setMaxValue(10)
                 .setRequired(false))
         .addIntegerOption(option => 
             option.setName('columns')
-                .setDescription('Number of horizontal spaces (Default: 7, Min: 4, Max: 15)')
+                .setDescription('Number of horizontal spaces (Default: 7, Min: 4, Max: 10)')
                 .setMinValue(4)
-                .setMaxValue(15)
+                .setMaxValue(10)
                 .setRequired(false))
         .addIntegerOption(option => 
             option.setName('timer')
@@ -40,7 +40,7 @@ export default {
         const host = interaction.user;
         const guildId = interaction.guildId;
 
-        // Fetch custom maximized options or apply defaults
+        // Fetch custom options or apply defaults
         const rows = interaction.options.getInteger('rows') || 6;
         const columns = interaction.options.getInteger('columns') || 7;
         const turnTimer = interaction.options.getInteger('timer') || 45;
@@ -51,6 +51,9 @@ export default {
             { emoji: ':blue_circle:', name: 'Blue' },
             { emoji: ':green_circle:', name: 'Green' }
         ];
+
+        // Global native number emojis array to match grid aesthetics
+        const NUMBER_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 
         let players = [
             { id: host.id, username: host.username, user: host, emoji: PLAYER_CONFIGS[0].emoji }
@@ -167,7 +170,6 @@ export default {
             let drawVotes = new Set();
             let statusOverlay = "";
 
-            // Custom dynamic helper wrapper to isolate multi-row grid components
             function renderBoardString() {
                 return board.map(row => row.join(' ')).join('\n');
             }
@@ -176,14 +178,14 @@ export default {
                 const current = players[turnIndex];
                 const keyMap = players.map(p => `${p.emoji} = ${p.username}`).join('  |   ');
                 
-                // Formats custom monospaced indicators so they look structurally perfect under circle emojis
-                const columnIndicators = Array.from({ length: columns }, (_, i) => `\`${String(i + 1).padStart(2, '0')}\``).join(' ');
+                // Formats native emoji indices dynamically cutting at configured layout boundary
+                const columnIndicators = NUMBER_EMOJIS.slice(0, columns).join(' ');
                 
                 const mainPrompt = extraInfo || `👉 **Turn:** ${current.user.toString()} ${current.emoji}\n💡 **Type a column number (1-${columns})** directly in chat to make your move! You have **${turnTimer} seconds**.`;
 
                 return infoEmbed(
                     `📊 Connect 4 Arena (\`${rows}x${columns}\`)`,
-                    `${renderBoardString()}\n\n${columnIndicators}\n\n**Key:** ${keyMap}\n\n${mainPrompt}`
+                    `${renderBoardString()}\n\n🔹 ${columnIndicators}\n\n**Key:** ${keyMap}\n\n${mainPrompt}`
                 );
             }
 
